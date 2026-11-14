@@ -1,0 +1,27 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="chaoyum/yuque-mcp-server 用浏览器里复制的 Cookie 调用语雀，列出知识库、看目录、把文档导出成 Markdown 或写回去。Token 只有超级会员能建，Cookie 和登录是同一套权限。"><meta name="theme-color" content="#fdfdfc"><title>用语雀网页的 Cookie 接 MCP，不必买超级会员的 Token | lm&#39;s Blog</title><link rel="icon" href="/avatar.svg" type="image/svg+xml"><link rel="canonical" href="https://lianminx.github.io/blog/yuque-mcp-with-cookie/"><link rel="alternate" type="application/rss+xml" title="lm's Blog" href="/rss.xml"><link rel="sitemap" href="/sitemap.xml"><meta property="og:type" content="website"><meta property="og:title" content="用语雀网页的 Cookie 接 MCP，不必买超级会员的 Token | lm's Blog"><meta property="og:description" content="chaoyum/yuque-mcp-server 用浏览器里复制的 Cookie 调用语雀，列出知识库、看目录、把文档导出成 Markdown 或写回去。Token 只有超级会员能建，Cookie 和登录是同一套权限。"><meta property="og:url" content="https://lianminx.github.io/blog/yuque-mcp-with-cookie/"><link rel="stylesheet" href="/_astro/Layout.O7edXYKY.css"></head><body><a class="skip-link" href="#content">跳到正文</a><div class="page"><header class="article-header"><a class="back" href="/" aria-label="返回首页">←</a></header><main id="content"><article><h1 class="article-title">用语雀网页的 Cookie 接 MCP，不必买超级会员的 Token</h1><p class="article-meta"><time datetime="2026-11-07T00:00:00.000Z">Nov 7, 2026</time> · 2 分钟阅读</p><div class="prose"><p>语雀的开放平台 Token 绑在超级会员上。没有这块会员，就建不了 Token，很多语雀 MCP 也就接不上。<a href="https://www.npmjs.com/package/@chaoyum/yuque-mcp-server">@chaoyum/yuque-mcp-server</a> 另外接受网页登录后的 Cookie。Cookie 能打开的文档，这套接口就能读、能导出、能改。</p>
+<p>它提供六个工具：按链接把一篇文档导出成 Markdown，上传或更新文档（含子文档和目录位置），列出或按名称搜索知识库，看目录树，改配置，以及检查当前认证是否还有效。导出文件默认落到工作区的 <code>yuque-downloads/</code>。</p>
+<h2 id="认证跟域名绑在一起">认证跟域名绑在一起</h2>
+<p>个人版是 <code>https://www.yuque.com</code>，团队版是各自的子域，例如 <code>https://xxx.yuque.com</code>。Cookie 和 Token 都不能拿到另一个域名上用。<code>YUQUE_HOST</code> 必须写成实际登录的那个站点。</p>
+<p>两种凭据二选一。Token 在语雀设置里创建，需要超级会员。Cookie 不需要：浏览器登录后打开开发者工具，在网络面板里任选一个打到语雀的请求，把请求头里的整段 Cookie 复制出来。里面要有 <code>yuque_ctoken</code> 和 <code>_yuque_session</code>。请求会带上这个 Cookie，并用 <code>yuque_ctoken</code> 填 <code>x-csrf-token</code>。</p>
+<p>配置可以放在环境变量里，也可以写到 <code>~/.yuque-mcp/config.json</code>：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="json"><code><span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#79B8FF">  "host"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"https://www.yuque.com"</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#79B8FF">  "cookie"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">""</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#79B8FF">  "token"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">""</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>环境变量是 <code>YUQUE_HOST</code>、<code>YUQUE_COOKIE</code>、<code>YUQUE_TOKEN</code>。改环境变量要重启 MCP 进程。改 <code>config.json</code> 会在下次调用时生效。认证的优先级是：环境变量里的 Token、环境变量里的 Cookie、配置文件里的 Token、配置文件里的 Cookie。</p>
+<p>Claude Code 里可以这样接：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="json"><code><span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#79B8FF">  "mcpServers"</span><span style="color:#E1E4E8">: {</span></span>
+<span class="line"><span style="color:#79B8FF">    "yuque"</span><span style="color:#E1E4E8">: {</span></span>
+<span class="line"><span style="color:#79B8FF">      "command"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"npx"</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#79B8FF">      "args"</span><span style="color:#E1E4E8">: [</span><span style="color:#9ECBFF">"-y"</span><span style="color:#E1E4E8">, </span><span style="color:#9ECBFF">"@chaoyum/yuque-mcp-server@latest"</span><span style="color:#E1E4E8">],</span></span>
+<span class="line"><span style="color:#79B8FF">      "env"</span><span style="color:#E1E4E8">: {</span></span>
+<span class="line"><span style="color:#79B8FF">        "YUQUE_HOST"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"https://www.yuque.com"</span></span>
+<span class="line"><span style="color:#E1E4E8">      }</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">  }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>Cookie 不要写进仓库，也不要贴进对话。它和浏览器里的登录是同一份会话，过期了就重新复制一段。</p>
+<p>我看过 1.1.0 的请求代码：Cookie 和 Token 只放在发往所配域名的请求头里，以及语雀导出接口返回的那个下载地址上。npm 上这个包没有公开源码仓库，装之前自己看一眼当前版本。它解决的是「没有超级会员 Token 也能把语雀接到 Agent」这一件事，不是另一套语雀账号。</p>
+</div></article></main><footer>© 2026 lm</footer></div></body></html>

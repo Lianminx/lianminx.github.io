@@ -1,0 +1,229 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="从两个开源项目的本地评估，到只读 MCP、ngrok 免费固定域名、macOS 登录后自启动。记录真实验证、踩坑和安全边界，并开源可复用的 Agent Skill。"><meta name="theme-color" content="#fdfdfc"><title>让 ChatGPT 读取本地代码：CodexPro、MCP 与固定隧道的完整实践 | lm&#39;s Blog</title><link rel="icon" href="/avatar.svg" type="image/svg+xml"><link rel="canonical" href="https://lianminx.github.io/blog/chatgpt-local-code-mcp-codexpro/"><link rel="alternate" type="application/rss+xml" title="lm's Blog" href="/rss.xml"><link rel="sitemap" href="/sitemap.xml"><meta property="og:type" content="website"><meta property="og:title" content="让 ChatGPT 读取本地代码：CodexPro、MCP 与固定隧道的完整实践 | lm's Blog"><meta property="og:description" content="从两个开源项目的本地评估，到只读 MCP、ngrok 免费固定域名、macOS 登录后自启动。记录真实验证、踩坑和安全边界，并开源可复用的 Agent Skill。"><meta property="og:url" content="https://lianminx.github.io/blog/chatgpt-local-code-mcp-codexpro/"><link rel="stylesheet" href="/_astro/Layout.O7edXYKY.css"></head><body><a class="skip-link" href="#content">跳到正文</a><div class="page"><header class="article-header"><a class="back" href="/" aria-label="返回首页">←</a></header><main id="content"><article><h1 class="article-title">让 ChatGPT 读取本地代码：CodexPro、MCP 与固定隧道的完整实践</h1><p class="article-meta"><time datetime="2026-11-01T00:00:00.000Z">Nov 1, 2026</time> · 15 分钟阅读</p><div class="prose"><p>我经常在 ChatGPT 网页版里讨论代码，但一旦问题涉及多个目录、调用链和项目约定，复制粘贴文件就很麻烦。我想要的不是让它直接改代码，而是：<strong>讨论到某个项目时，让它按需读取我电脑上允许访问的代码。</strong></p>
+<p>这次我先比较了两个开源项目，最终用 CodexPro 提供本地 MCP 工具，再用 ngrok 的固定 HTTPS 地址接入 ChatGPT。整个过程整理成了 <a href="https://github.com/Lianminx/chatgpt-local-code-skill">chatgpt-local-code-skill</a>，里面有 Skill、部署辅助脚本、固定依赖快照和验证用例。</p>
+<p>先说边界：这不是完全离线方案，不是让 ChatGPT 自动拥有整台电脑，也不是绕过账号权限。代码被工具读取后，会经过隧道服务并进入 ChatGPT 的处理链路。下面记录的是 <strong>2026 年 11 月 1 日，在 macOS Apple silicon 上的一次实践</strong>；服务条款、免费额度、界面和依赖安全状态都可能变化。</p>
+<h2 id="一先分清楚我想接的是工具不是模型代理">一、先分清楚：我想接的是工具，不是模型代理</h2>
+<p>一开始看到两个项目：</p>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>主要解决什么</th>
+<th>是否符合这次目标</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/rebel0789/codexpro">rebel0789/codexpro</a></td>
+<td>把明确允许的本地工作区通过 MCP 暴露给 ChatGPT，提供读文件、搜索等工具</td>
+<td>符合，链路直接</td>
+</tr>
+<tr>
+<td><a href="https://github.com/miuuyy/codex-chatgpt-web">miuuyy/codex-chatgpt-web</a></td>
+<td>通过浏览器操作 ChatGPT 网页，再把它桥接为 Codex 可用的模型接口</td>
+<td>是另一种需求，接入和维护更复杂</td>
+</tr>
+</tbody>
+</table>
+<p>后者不仅是“让 ChatGPT 看本地文件”，还涉及浏览器运行时、登录状态、模型路由以及工具回传。我的现有 Codex 已经有自己的模型配置，没必要为了读代码接管那条路由。</p>
+<p>因此，这次选择的是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>ChatGPT 网页对话（选择已安装的自定义 MCP 插件）</span></span>
+<span class="line"><span>    ↓ HTTPS / MCP</span></span>
+<span class="line"><span>ngrok 账号绑定的固定 dev domain</span></span>
+<span class="line"><span>    ↓ 加密隧道</span></span>
+<span class="line"><span>本机 127.0.0.1:8788，只转发 /mcp</span></span>
+<span class="line"><span>    ↓</span></span>
+<span class="line"><span>本机 127.0.0.1:8787，CodexPro 验证访问令牌</span></span>
+<span class="line"><span>    ↓ 路径边界和敏感文件过滤</span></span>
+<span class="line"><span>明确允许的本地工作区（只读）</span></span></code></pre>
+<p>这里每一层职责不同：ChatGPT 负责理解问题和选择工具，MCP 是交互协议，CodexPro 真正执行本机文件操作，ngrok 负责让云端可以连到本机服务。<strong>Skill 则告诉编码 Agent 如何配置、检查和维护这条链路，它不是 MCP 服务本身。</strong></p>
+<h2 id="二先在本地跑通再考虑把代码接出去">二、先在本地跑通，再考虑把代码接出去</h2>
+<p>评估时，我把两个项目放在独立目录里安装和测试，没有一开始就交出业务代码或账号登录信息。</p>
+<p>CodexPro 使用 0.30.3，固定到提交 <code>113472c6ff0a1516b6f223a43cd355abdf2e61ae</code>。原始版本构建通过，13 组 smoke 测试通过，另外做了真实 HTTP MCP 检查：未认证请求被拒绝，认证后能够初始化、枚举工具、读取测试文件，敏感路径与越界路径被阻断。</p>
+<p>另一个项目的本地测试也能通过。测试环境补齐后，根测试结果为 1114 通过、106 跳过，Launcher 测试串行执行为 430 通过、2 跳过；另外执行了本地浏览器样例和 Electron 测试。<strong>这些是本地核心和样例验证，不是用我的 ChatGPT 账号完成真实模型调用的证明。</strong> 跳过的项目也不能计入“全部功能可用”。</p>
+<p>这个区别很重要：一个项目能编译、单元测试通过，与账号授权、线上页面结构、实际模型权限和端到端使用是不同的事情。</p>
+<h3 id="依赖告警不能因为功能测试通过就忽略">依赖告警不能因为功能测试通过就忽略</h3>
+<p>原始 CodexPro 锁文件的生产依赖审计报告了 10 项告警，其中包含 critical 和 high。这个结果只是特定时间的公告匹配，不等于我已经证明每个漏洞都可利用；但同样不能因为服务能跑，就直接接公网。</p>
+<p>我没有修改原始评估仓库，而是另外建立运行副本，升级相关依赖，处理 Zod 4 的一处签名兼容：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="ts"><code><span class="line"><span style="color:#6A737D">// Zod 4 中明确指定 record 的 key schema</span></span>
+<span class="line"><span style="color:#E1E4E8">z.</span><span style="color:#B392F0">record</span><span style="color:#E1E4E8">(z.</span><span style="color:#B392F0">string</span><span style="color:#E1E4E8">(), z.</span><span style="color:#B392F0">any</span><span style="color:#E1E4E8">())</span></span></code></pre>
+<p>更新后，TypeScript 构建和 13 组 smoke 测试再次通过，当时 <code>npm audit</code> 未报告漏洞。开源 Skill 保留了这份经过测试的依赖快照，并在安装时重新审计。</p>
+<p>这里的结论只能是“本轮检查通过”，不是“永久安全”。以后公告更新，安装可能被审计步骤阻断，需要重新评估、修复和回归，而不是无脑执行 <code>npm audit fix --force</code>。</p>
+<h2 id="三只读是服务端配置不是对模型说一句别改代码">三、只读是服务端配置，不是对模型说一句“别改代码”</h2>
+<p>如果只想讨论代码，我不需要让它执行命令。即使项目提供所谓 safe bash，也不等于操作系统沙箱：<code>npm test</code>、<code>npm run build</code> 仍然可能执行仓库里的任意脚本。</p>
+<p>这次核心配置是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sh"><code><span class="line"><span style="color:#E1E4E8">CODEXPRO_HOST</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">127.0.0.1</span></span>
+<span class="line"><span style="color:#E1E4E8">CODEXPRO_BASH_MODE</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">off</span></span>
+<span class="line"><span style="color:#E1E4E8">CODEXPRO_WRITE_MODE</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">off</span></span>
+<span class="line"><span style="color:#E1E4E8">CODEXPRO_CODEX_SESSIONS</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">off</span></span>
+<span class="line"><span style="color:#E1E4E8">CODEXPRO_TOOL_MODE</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">standard</span></span>
+<span class="line"><span style="color:#E1E4E8">CODEXPRO_CONNECTION_TEST</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">1</span></span></code></pre>
+<p><code>ROOT</code>、允许根目录和随机访问令牌由配置脚本写入，示例里不放真实值。</p>
+<p>其中 <code>CONNECTION_TEST=1</code> 是在这个固定版本中复用的工具过滤开关：除了关闭写文件和 shell，还移除 supertool、自检写探针、导出和交接类动作，保留读文件、搜索、目录查看等能力。它的名字容易误导，<strong>不能假定未来版本仍然完全相同</strong>，所以验证脚本会再检查实际注册的工具，以及写入请求是否真的被拒绝。</p>
+<p>我另外做了三件事：</p>
+<ul>
+<li>运行副本、令牌、ngrok 配置和日志放在开放目录之外，避免它们通过文件工具被读出。</li>
+<li>保留上游对 <code>.env</code>、私钥、<code>.git</code> 等路径的过滤，并补充常见认证文件和凭据目录。</li>
+<li>在隧道前加一个只允许 <code>/mcp</code> 的本机网关，不把管理页面一起暴露出去。</li>
+</ul>
+<p>我实际授权的是一个较大的本地开发工作区，但不建议把这当默认方案。<strong>能从一个仓库开始，就先从一个仓库开始。</strong> 即使路径检查和符号链接越界测试通过，也不能把它理解成容器隔离，更不能保证过滤规则能识别所有文件名不规范的密钥。</p>
+<h2 id="四为什么本地服务地址不能直接填进-chatgpt">四、为什么本地服务地址不能直接填进 ChatGPT</h2>
+<p>本机服务启动后，会有这样的地址：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>http://127.0.0.1:8787/mcp</span></span></code></pre>
+<p>这个 <code>127.0.0.1</code> 指向当前访问者自己的机器。ChatGPT 的 MCP 连接由云端发起，不是我的浏览器替云端读取电脑上的端口，因此仅提供 localhost 地址不够。</p>
+<p>我先用了 Cloudflare Quick Tunnel。它适合快速验证，不需要域名，能立即得到一个临时 HTTPS 地址。问题是：<strong>隧道重建后地址可能变化，ChatGPT 插件还保存着旧地址。</strong> 这就不符合我想要的“重启电脑后直接恢复”。</p>
+<p>Cloudflare 普通的命名隧道公网应用路线需要由 Cloudflare 管理的域名。当时我有账号，但没有独立域名，不想为了这个小需求先购买一个。</p>
+<p>最后改用 ngrok 免费账号分配的 dev domain。根据当时的官方说明，它绑定账号，重启客户端不变；本次实际分配的是 <code>ngrok-free.dev</code> 后缀，文档例子也可能使用 <code>ngrok-free.app</code>。这是服务商提供的子域名，不是我独立持有的域名。</p>
+<p>截至本文核验时，免费方案列出的额度包括每月 1 GB 出站流量、20,000 次 HTTP 请求。读代码可以先用，但是否够用取决于文件大小和调用频率；不要把免费服务理解成无条件、无限量、永久可用。</p>
+<p>另外，OpenAI 也有 <a href="https://developers.openai.com/api/docs/guides/secure-mcp-tunnels">Secure MCP Tunnel</a> 的官方路线，可以避免自行公开 HTTP 监听入口，但需要按它自己的 Tunnel、运行凭据和账号权限流程配置。本次没有实现那条路线，不能把它和 ngrok 配置混为一谈。</p>
+<h2 id="五登录有两件事网页账号与本机-agent-授权">五、登录有两件事：网页账号与本机 agent 授权</h2>
+<p>这一步看起来简单，实际踩了两个坑。</p>
+<h3 id="1-登录-ngrok-网页不等于本机已经登录">1. 登录 ngrok 网页不等于本机已经登录</h3>
+<p>我在浏览器里登录 ngrok 后，本机客户端仍需要 authtoken 才能建立账号绑定的隧道。为了不把令牌留在聊天记录或 shell 历史里，我用一个隐藏输入提示把它保存到私有配置文件，权限为 <code>0600</code>。</p>
+<p>曾经两次遇到 <code>ERR_NGROK_105</code>：令牌格式不正确。不能只听到“复制好了”就认定成功，要检查文件是否真的更新，再以客户端返回的认证结果为准。应复制令牌的值，而不是示例命令、占位符或旧剪贴板内容。</p>
+<p>这里有两个不同的秘密：</p>
+<table>
+<thead>
+<tr>
+<th>秘密</th>
+<th>用途</th>
+<th>不应该放在哪里</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ngrok authtoken</td>
+<td>让本机 agent 连接我的 ngrok 账号</td>
+<td>博文、聊天、命令参数、Git 仓库</td>
+</tr>
+<tr>
+<td>MCP 访问令牌</td>
+<td>让 CodexPro 判断调用方是否有权读取代码</td>
+<td>公开连接示例、截图、被开放的工作区</td>
+</tr>
+</tbody>
+</table>
+<h3 id="2-免费-ngrok-agent-继承-http-代理会失败">2. 免费 ngrok agent 继承 HTTP 代理会失败</h3>
+<p>本机开发环境设置了 HTTP/HTTPS 代理。第一次启动 ngrok 时继承了这些变量，返回 <code>ERR_NGROK_9009</code>：通过 HTTP 代理连接 agent 属于付费功能。</p>
+<p>我没有因此升级套餐，也没有全局关闭代理，而是<strong>只给 ngrok 子进程提供干净的代理环境</strong>。本轮网络直连成功，隧道随后正常建立。用于检查公开地址的客户端是否需要代理，则是另一回事，两条网络路径要分别判断。</p>
+<p>如果另一台机器无法直连，这个处理不保证适用。应报告网络阻碍，再选择用户认可的方案，而不是替用户改系统网络或开通付费服务。</p>
+<h2 id="六chatgpt-插件如何填写">六、ChatGPT 插件如何填写</h2>
+<p>按当前 <a href="https://developers.openai.com/api/docs/guides/custom-mcp-server">OpenAI 官方 MCP 接入说明</a>：</p>
+<ol>
+<li>登录 ChatGPT 网页，进入插件页面，选择添加自定义 MCP 服务器。</li>
+<li>填名称和 HTTPS 服务器 URL，配置鉴权。</li>
+<li>阅读风险提示后创建，并安装这个插件。</li>
+<li>在对话输入框通过 <code>@</code> 选择插件，再发起读取请求。</li>
+</ol>
+<p>菜单名称和可见性受账号、工作区权限及安全设置影响。不能保证每个账号都能看到同样入口。</p>
+<p>CodexPro 提供了个人连接器的 query token 兼容形式：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>https://YOUR-ASSIGNED-DOMAIN.ngrok-free.dev/mcp?codexpro_token=REPLACE_WITH_PRIVATE_TOKEN</span></span></code></pre>
+<p><strong>这只是格式示意，不是可用地址。</strong> 实际完整地址保存在私有本机文件里，不在正文展示。</p>
+<p>使用这种形式时，ChatGPT 界面选择 No Authentication，因为令牌已放在 URL 中；但 CodexPro 仍检查令牌，不能把它叫作“没有鉴权”。知道完整 URL 的人，相当于拿到了读取允许范围代码的钥匙。URL 还可能进入连接器配置、历史或服务日志，所以不要截图分享，不要放短链接，更不要提交 Git。</p>
+<p>对于多人使用或长期生产部署，应评估 OAuth 等更合适的鉴权，不应把个人 query token 方案直接推广成团队标准。</p>
+<p>第一次接通，我更愿意这样测试：</p>
+<blockquote>
+<p>只使用这个本地代码插件，打开当前工作区，只列出根目录第一层目录，不递归，不读取文件内容。</p>
+</blockquote>
+<p>确认项目范围后，再针对某个子目录或调用链提问，而不是一句“帮我分析全部代码”就开始大范围读取。</p>
+<h2 id="七重启后不用反复添加插件但要具备两个条件">七、重启后不用反复添加插件，但要具备两个条件</h2>
+<p>第一个条件是固定 URL。ngrok dev domain 和本地 MCP 令牌不变，ChatGPT 插件就可以继续使用同一地址。</p>
+<p>第二个条件是本机服务自动恢复。我配置了两个用户级 macOS LaunchAgent：一个负责 MCP 服务和网关，另一个负责 ngrok。它们在用户登录后启动，进程退出时尝试恢复；配置里不写令牌值，只引用本机私有文件。</p>
+<p>这是“登录后自启动”，<strong>不是电脑还没登录就运行的系统守护进程</strong>。关机、休眠、断网、项目所在磁盘未挂载时，都不能保证访问。</p>
+<p>我实际做过停止旧进程、重新交给 LaunchAgent 启动，再通过同一个 ngrok 地址执行读取验证。<strong>没有为了这次验证真正重启整台电脑。</strong> 因此可以说“服务重启后地址和访问正常”，不能写成“已经完成所有开机恢复场景验收”。</p>
+<p>停止和永久禁用也要分清：停止本次登录会话，下次登录仍会启动；永久禁用需要卸载并移除对应 LaunchAgent。开源辅助脚本提供了两个不同命令，不让“停止了”变成一个错误的长期安全预期。</p>
+<h2 id="八把过程收敛成-skill而不是一篇只能手抄的教程">八、把过程收敛成 Skill，而不是一篇只能手抄的教程</h2>
+<p>这次开源的是 <a href="https://github.com/Lianminx/chatgpt-local-code-skill">chatgpt-local-code-skill</a>，首版重点是让另一个 Agent 在相同目标下少走弯路，而不是宣称一键兼容所有系统。</p>
+<p>仓库包含：</p>
+<ul>
+<li><code>SKILL.md</code>：什么时候用、需要确认哪些目录和公开范围、什么时候停止。</li>
+<li><code>references/setup.md</code>：安装、鉴权、固定隧道、自启动和常见错误。</li>
+<li><code>scripts/bridge.py</code>：参数化的 macOS 部署和生命周期入口。</li>
+<li><code>assets/</code>：只读网关、验证脚本、经过本轮测试的 npm 依赖快照。</li>
+<li><code>tests/</code>：根目录与私有状态隔离、域名校验、文件权限和 LaunchAgent 配置测试。</li>
+</ul>
+<p>它不会读取浏览器 Cookie，不会接管 Codex 模型配置，也不会替用户创建插件或购买服务。</p>
+<h3 id="使用示例">使用示例</h3>
+<p>把 <code>skills/chatgpt-local-code</code> 安装到支持该格式的 Agent 的 Skill 目录，或者直接在克隆后的仓库里运行辅助脚本：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sh"><code><span class="line"><span style="color:#B392F0">git</span><span style="color:#9ECBFF"> clone</span><span style="color:#9ECBFF"> https://github.com/Lianminx/chatgpt-local-code-skill.git</span></span>
+<span class="line"><span style="color:#79B8FF">cd</span><span style="color:#9ECBFF"> chatgpt-local-code-skill/skills/chatgpt-local-code</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">python3</span><span style="color:#9ECBFF"> scripts/bridge.py</span><span style="color:#9ECBFF"> install</span></span>
+<span class="line"><span style="color:#B392F0">python3</span><span style="color:#9ECBFF"> scripts/bridge.py</span><span style="color:#9ECBFF"> configure</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  --root</span><span style="color:#9ECBFF"> /absolute/path/to/repo</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  --domain</span><span style="color:#9ECBFF"> YOUR-ASSIGNED-DOMAIN.ngrok-free.dev</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  --ngrok</span><span style="color:#9ECBFF"> /absolute/path/to/ngrok</span><span style="color:#79B8FF"> \</span></span>
+<span class="line"><span style="color:#79B8FF">  --confirm-public-access</span></span></code></pre>
+<p>参数中的目录、域名和 ngrok 路径都要替换为自己的值。ngrok 客户端应从官方来源独立安装，脚本不附带二进制。辅助脚本默认使用独立状态目录，不覆盖这次实践中已经运行的服务。</p>
+<p>先以前台方式启动并验证本地 MCP；确认后停止前台服务，再选择启用登录后自动启动和公开验证。完整步骤以仓库文档为准。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sh"><code><span class="line"><span style="color:#B392F0">python3</span><span style="color:#9ECBFF"> scripts/bridge.py</span><span style="color:#9ECBFF"> enable-autostart</span><span style="color:#79B8FF"> --confirm-autostart</span></span>
+<span class="line"><span style="color:#B392F0">python3</span><span style="color:#9ECBFF"> scripts/bridge.py</span><span style="color:#9ECBFF"> verify</span><span style="color:#79B8FF"> --public</span></span>
+<span class="line"><span style="color:#B392F0">python3</span><span style="color:#9ECBFF"> scripts/bridge.py</span><span style="color:#9ECBFF"> status</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># 只停止当前登录会话</span></span>
+<span class="line"><span style="color:#B392F0">python3</span><span style="color:#9ECBFF"> scripts/bridge.py</span><span style="color:#9ECBFF"> stop</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D"># 取消后续登录时自动启动</span></span>
+<span class="line"><span style="color:#B392F0">python3</span><span style="color:#9ECBFF"> scripts/bridge.py</span><span style="color:#9ECBFF"> disable-autostart</span></span></code></pre>
+<p>Skill 中的验证器使用自己创建的无敏感信息样例，而不是拿真实项目文件测试连通。这样测试 MCP 读取和权限边界时，不必先发送业务代码。</p>
+<h2 id="九怎样判断完成而不是只看到一个在线域名">九、怎样判断“完成”，而不是只看到一个在线域名</h2>
+<p>这次我把完成拆成几层：</p>
+<table>
+<thead>
+<tr>
+<th>检查层</th>
+<th>能证明什么</th>
+<th>不能证明什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>构建、smoke、依赖审计</td>
+<td>固定版本在本轮环境下的基础可用性和已知告警状态</td>
+<td>没有未知漏洞、所有平台兼容</td>
+</tr>
+<tr>
+<td>本地 MCP 初始化和工具调用</td>
+<td>协议、鉴权和本机读文件路径可用</td>
+<td>公网和 ChatGPT 账号可用</td>
+</tr>
+<tr>
+<td>固定 HTTPS 地址上的 MCP 验证</td>
+<td>ngrok 到本机的实际读文件链路可用</td>
+<td>ChatGPT 会在每次对话正确选择工具</td>
+</tr>
+<tr>
+<td>只读、越界、敏感路径、管理入口测试</td>
+<td>这些具体边界按预期拒绝请求</td>
+<td>所有秘密都能被识别、OS 级隔离成立</td>
+</tr>
+<tr>
+<td>服务停止并重新启动</td>
+<td>本轮服务恢复和固定域名复用正常</td>
+<td>所有电脑重启、网络变化、长期可用性已验证</td>
+</tr>
+<tr>
+<td>ChatGPT 中安装、选择和实际调用</td>
+<td>对应账号、对话和工具的真实使用</td>
+<td>所有模型与账号都有相同权限</td>
+</tr>
+</tbody>
+</table>
+<p>本轮部署已经验证到公开 MCP、实际文件读取、权限限制和服务重启后的复验。ChatGPT 的账号入口、插件安装和对话实际使用应单独验收；不能用命令行通过替代它。本次没有测试浏览器桥接项目的真实账号模型调用，也没有验证长时间运行或所有系统重启场景。</p>
+<p>这也是我最想保留在 Skill 里的习惯：<strong>连接建立、权限正确、用户实际能用，是三个不同的完成条件。</strong></p>
+<h2 id="最后">最后</h2>
+<p>让 ChatGPT 读取本地代码，并不一定需要复杂的模型桥接。对于“在网页里讨论代码”这个目标，一个范围清楚的只读 MCP 服务，加上可稳定访问的 HTTPS 入口，就能把复制粘贴变成按需读取。</p>
+<p>真正值得花时间的，不只是让域名在线，而是开放哪些目录、令牌放在哪里、哪些工具不应该出现、重启后如何恢复，以及失败时怎样给出准确证据。</p>
+<p><strong>能读代码是一项能力，能清楚地控制它读到什么，才是一套可以持续使用的流程。</strong></p>
+<h2 id="参考资料">参考资料</h2>
+<ul>
+<li><a href="https://github.com/rebel0789/codexpro">CodexPro</a>，本次读取工具的上游项目。</li>
+<li><a href="https://github.com/miuuyy/codex-chatgpt-web">codex-chatgpt-web</a>，本次比较但未采用的浏览器桥接路线。</li>
+<li><a href="https://github.com/Lianminx/chatgpt-local-code-skill">开源 Skill 与辅助脚本</a>。</li>
+<li><a href="https://developers.openai.com/api/docs/guides/custom-mcp-server">OpenAI：添加自定义 MCP 服务器</a>。</li>
+<li><a href="https://developers.openai.com/api/docs/guides/secure-mcp-tunnels">OpenAI：Secure MCP Tunnels</a>。</li>
+<li><a href="https://ngrok.com/docs/pricing-limits/free-plan-limits/">ngrok 免费方案限制</a>。</li>
+<li><a href="https://ngrok.com/docs/agent/config/v3/">ngrok agent 配置</a>。</li>
+<li><a href="https://ngrok.com/docs/errors/err_ngrok_9009/">ngrok ERR_NGROK_9009</a>。</li>
+<li><a href="https://developers.cloudflare.com/tunnel/get-started/">Cloudflare Tunnel 前置条件</a>。</li>
+</ul>
+</div></article></main><footer>© 2026 lm</footer></div></body></html>

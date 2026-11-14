@@ -1,0 +1,113 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="开源 xhs-fat-publisher 的完整使用流程：安装 Playwright、保持登录、准备图片和正文、校验发布包、自动填写页面，最后人工发布。"><meta name="theme-color" content="#fdfdfc"><title>小红书自动发布教程：用 Skill 整理图文并自动填写发布页 | lm&#39;s Blog</title><link rel="icon" href="/avatar.svg" type="image/svg+xml"><link rel="canonical" href="https://lianminx.github.io/blog/xiaohongshu-draft-automation/"><link rel="alternate" type="application/rss+xml" title="lm's Blog" href="/rss.xml"><link rel="sitemap" href="/sitemap.xml"><meta property="og:type" content="website"><meta property="og:title" content="小红书自动发布教程：用 Skill 整理图文并自动填写发布页 | lm's Blog"><meta property="og:description" content="开源 xhs-fat-publisher 的完整使用流程：安装 Playwright、保持登录、准备图片和正文、校验发布包、自动填写页面，最后人工发布。"><meta property="og:url" content="https://lianminx.github.io/blog/xiaohongshu-draft-automation/"><link rel="stylesheet" href="/_astro/Layout.O7edXYKY.css"></head><body><a class="skip-link" href="#content">跳到正文</a><div class="page"><header class="article-header"><a class="back" href="/" aria-label="返回首页">←</a></header><main id="content"><article><h1 class="article-title">小红书自动发布教程：用 Skill 整理图文并自动填写发布页</h1><p class="article-meta"><time datetime="2026-09-15T00:00:00.000Z">Sep 15, 2026</time> · 7 分钟阅读</p><div class="prose"><p>小红书图文的重复工作往往是整理图片、挑标题、复制正文和标签，再逐项填写发布页。我把这部分整理成了 <a href="https://github.com/Lianminx/xhs-fat-publisher">xhs-fat-publisher</a>，仓库里包含 Skill 和实际执行的 Node.js 脚本。</p>
+<p>它能做的是：<strong>打包本地素材，打开创作者页面，上传图片并填写内容，最后停下来让人确认发布。</strong> 它不自动点击发布，也不保证页面填写成功后，平台已经持久保存了草稿。</p>
+<p>本文依据仓库 <code>SKILL.md</code>、<code>scripts/xhs_fat_publisher.js</code>、示例配置和本地样例验证整理。先把能跑到哪一步讲清楚，再谈自动化。</p>
+<h2 id="agent-和脚本各做什么">Agent 和脚本各做什么</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>你或 Agent：选题、改写正文、制作并检查正式图片</span></span>
+<span class="line"><span>  ↓</span></span>
+<span class="line"><span>build：整理 content.md、meta.json 和 images/</span></span>
+<span class="line"><span>  ↓</span></span>
+<span class="line"><span>validate：检查发布包的基本结构</span></span>
+<span class="line"><span>  ↓</span></span>
+<span class="line"><span>prepare：复用登录态，上传图片，填写标题和正文</span></span>
+<span class="line"><span>  ↓</span></span>
+<span class="line"><span>你：检查账号、内容和可见范围，点击发布</span></span></code></pre>
+<p>当前脚本不会调用大模型帮你精修文案。没有传入图片时，它生成的是纯色占位 PNG，不是带知识点的成品卡片。内容生产与页面填写需要分别检查。</p>
+<h2 id="第一步安装依赖和浏览器">第一步：安装依赖和浏览器</h2>
+<p>准备 Node.js、npm、Git。后续命令都在仓库目录执行：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sh"><code><span class="line"><span style="color:#B392F0">git</span><span style="color:#9ECBFF"> clone</span><span style="color:#9ECBFF"> https://github.com/Lianminx/xhs-fat-publisher.git</span></span>
+<span class="line"><span style="color:#79B8FF">cd</span><span style="color:#9ECBFF"> xhs-fat-publisher</span></span>
+<span class="line"><span style="color:#B392F0">npm</span><span style="color:#9ECBFF"> ci</span></span>
+<span class="line"><span style="color:#B392F0">npx</span><span style="color:#9ECBFF"> playwright</span><span style="color:#9ECBFF"> install</span><span style="color:#9ECBFF"> chromium</span></span>
+<span class="line"><span style="color:#B392F0">node</span><span style="color:#9ECBFF"> scripts/xhs_fat_publisher.js</span><span style="color:#9ECBFF"> doctor</span></span></code></pre>
+<p><code>npm ci</code> 按仓库锁文件安装依赖；下一步安装 Playwright 使用的 Chromium。桌面端运行这条路线需要可见的浏览器窗口。</p>
+<p>特别注意 <code>doctor</code> 的输出：当前实现即便没有装好 Playwright，也可能输出顶层 <code>ok: true</code>。要看 <code>playwrightInstalled</code> 字段；它也不检查账号是否已经登录。进程退出码为零不能替代这些检查。</p>
+<h2 id="第二步建立专用登录态">第二步：建立专用登录态</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sh"><code><span class="line"><span style="color:#B392F0">node</span><span style="color:#9ECBFF"> scripts/xhs_fat_publisher.js</span><span style="color:#9ECBFF"> init</span></span>
+<span class="line"><span style="color:#B392F0">node</span><span style="color:#9ECBFF"> scripts/xhs_fat_publisher.js</span><span style="color:#9ECBFF"> open-login</span><span style="color:#79B8FF"> --keep-open</span></span></code></pre>
+<p>在打开的创作者浏览器里手动完成登录。登录结束后关闭这个浏览器，再执行后面的 <code>prepare</code>；不要让两个进程同时占用同一份 profile。</p>
+<p>默认文件位置是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>~/.xhs-fat-publisher/</span></span>
+<span class="line"><span>  profile.json          本地默认配置</span></span>
+<span class="line"><span>  playwright-profile/   浏览器登录态</span></span>
+<span class="line"><span>  workspace/            未指定输出路径时的工作目录</span></span></code></pre>
+<p><code>~</code> 代表当前系统用户目录。使用专用 profile，能让这个流程复用自己的登录态；普通浏览器已经登录，不代表这个 profile 也已登录。</p>
+<p>登录态、Cookie 和诊断页面可能包含账号信息，别把它们作为“开箱即用配置”放进 GitHub。</p>
+<h2 id="第三步先跑一个完全本地的例子">第三步：先跑一个完全本地的例子</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sh"><code><span class="line"><span style="color:#B392F0">node</span><span style="color:#9ECBFF"> scripts/xhs_fat_publisher.js</span><span style="color:#9ECBFF"> build</span><span style="color:#79B8FF"> --source-file</span><span style="color:#9ECBFF"> assets/sample-input.md</span><span style="color:#79B8FF"> --output-dir</span><span style="color:#9ECBFF"> ./out/demo</span></span>
+<span class="line"><span style="color:#B392F0">node</span><span style="color:#9ECBFF"> scripts/xhs_fat_publisher.js</span><span style="color:#9ECBFF"> validate</span><span style="color:#79B8FF"> --package-dir</span><span style="color:#9ECBFF"> ./out/demo</span></span></code></pre>
+<p>输出目录如下：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>out/demo/</span></span>
+<span class="line"><span>  content.md</span></span>
+<span class="line"><span>  meta.json</span></span>
+<span class="line"><span>  images/</span></span>
+<span class="line"><span>  diagnostics/</span></span></code></pre>
+<p>这个例子会生成 1080×1440 的纯色占位图，用来证明文件生成和读取路径能工作。<strong>到这里停住，不要把演示包直接上传。</strong> <code>validate</code> 成功只说明标题、正文、图片列表和文件存在，不表示图片好看、内容合适或者满足平台限制。</p>
+<h2 id="第四步换成可以发布的真实内容">第四步：换成可以发布的真实内容</h2>
+<p>准备下面的输入：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>input/</span></span>
+<span class="line"><span>  post.md</span></span>
+<span class="line"><span>  images/</span></span>
+<span class="line"><span>    01-cover.png</span></span>
+<span class="line"><span>    02-steps.png</span></span>
+<span class="line"><span>    03-example.png</span></span></code></pre>
+<p><code>post.md</code> 使用 UTF-8，里面放已经整理过的正文。图片可以由你设计，也可以由 Agent 使用可用的制图工具制作；先看完所有图片，再进入上传。不要把复杂图表和长文章截图硬塞进一张封面。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sh"><code><span class="line"><span style="color:#B392F0">node</span><span style="color:#9ECBFF"> scripts/xhs_fat_publisher.js</span><span style="color:#9ECBFF"> build</span><span style="color:#79B8FF"> --source-file</span><span style="color:#9ECBFF"> input/post.md</span><span style="color:#79B8FF"> --image-dir</span><span style="color:#9ECBFF"> input/images</span><span style="color:#79B8FF"> --output-dir</span><span style="color:#9ECBFF"> ./out/post</span></span>
+<span class="line"><span style="color:#B392F0">node</span><span style="color:#9ECBFF"> scripts/xhs_fat_publisher.js</span><span style="color:#9ECBFF"> validate</span><span style="color:#79B8FF"> --package-dir</span><span style="color:#9ECBFF"> ./out/post</span></span></code></pre>
+<p>图片支持 PNG、JPG、JPEG、WebP。使用数字前缀方便排序，但仍要对照生成的图片列表与最终页面确认顺序。</p>
+<p>打开 <code>out/post/content.md</code>，逐项编辑：</p>
+<ul>
+<li><strong>推荐标题：</strong> 上传使用第一个候选，把最终标题放在第一项。脚本生成的候选只是一组机械模板，不代表已经做过选题判断。</li>
+<li><strong>正文：</strong> 删除不适合发布的 Markdown 标记，检查段落与表达。脚本会保留源文本，不会自动精修所有格式。</li>
+<li><strong>标签：</strong> 保留与内容直接相关的词。脚本把标签追加成正文文本，不保证已经选中平台话题。</li>
+<li><strong>图片：</strong> 检查文件名、顺序以及每张图里的文字。</li>
+</ul>
+<p>字数、图片数量和页面校验要求，以发布时平台给出的限制为准。不要把脚本的结构检查当成平台的验收。</p>
+<p>有个当前版本的坑：用 <code>build --package-dir</code> 重建旧包时，已有标题会优先于 <code>--title-override</code>；没有再次指定图片目录，还会生成占位图。因此修改成稿优先直接编辑 <code>content.md</code>，确实需要重建时提供正式图片并使用新的输出目录。</p>
+<h2 id="第五步填写页面人工确认">第五步：填写页面，人工确认</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sh"><code><span class="line"><span style="color:#B392F0">node</span><span style="color:#9ECBFF"> scripts/xhs_fat_publisher.js</span><span style="color:#9ECBFF"> prepare</span><span style="color:#79B8FF"> --package-dir</span><span style="color:#9ECBFF"> ./out/post</span><span style="color:#79B8FF"> --keep-open</span></span></code></pre>
+<p>脚本会打开创作者页面，切换到图文入口，上传图片，填写标题和正文。<code>--keep-open</code> 会保持窗口和进程等待，检查完成后关闭窗口即可结束。</p>
+<p>发布前看一遍：账号是否正确，图片是否完整且有序，标题与正文是否填进正确区域，标签是否需要在界面选择话题，以及最终可见范围是否符合预期。</p>
+<p>之后由你点击发布。页面填写成功与公开发布成功是两件事；实际发布结果应以平台回执和作品页面为准。</p>
+<h2 id="交给-agent-时怎样描述任务">交给 Agent 时，怎样描述任务</h2>
+<p>将整个仓库安装进 Agent 支持的 Skill 目录，或直接指定 <code>SKILL.md</code> 路径。仓库带执行脚本，但仍需要安装 Node 依赖和浏览器。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>读取 xhs-fat-publisher/SKILL.md。</span></span>
+<span class="line"><span>输入正文是 input/post.md，正式图片在 input/images。</span></span>
+<span class="line"><span>输出到 out/post。整理成适合小红书的图文包，检查标题、正文、标签和图片。</span></span>
+<span class="line"><span>完成本地检查后，打开创作者页面并填写，保持窗口打开。</span></span>
+<span class="line"><span>不要点击发布。遇到登录失效就告诉我；如果图片仍是占位图，不要上传。</span></span></code></pre>
+<p>如果要让 Agent 同时写稿和制图，应在任务里明确素材来源、主题与图像工具，不要期待执行脚本自行补齐这些能力。</p>
+<h2 id="出错时从哪一层看">出错时从哪一层看</h2>
+<table>
+<thead>
+<tr>
+<th>现象</th>
+<th>排查方向</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无法加载 Playwright</td>
+<td>确认在仓库内完成 <code>npm ci</code>，再安装 Chromium</td>
+</tr>
+<tr>
+<td>浏览器要求重新登录</td>
+<td>用同一 profile 执行 <code>open-login</code>，完成后关闭再重试</td>
+</tr>
+<tr>
+<td>profile 被占用</td>
+<td>关闭前一个使用该 profile 的自动化浏览器</td>
+</tr>
+<tr>
+<td>图片上传或输入框定位失败</td>
+<td>查看包内 <code>diagnostics/</code> 的截图和 HTML，核对页面是否改版</td>
+</tr>
+<tr>
+<td>脚本成功但内容不对</td>
+<td>检查第一个标题候选、正文标记和图片列表，不能只看 <code>ok</code></td>
+</tr>
+</tbody>
+</table>
+<p>发生超时或部分填充后，先检查当前页面，不要盲目重复上传。截图和 HTML 只用于本地诊断，分享前先移除账号与会话信息。</p>
+<p>本轮做了本地样例构建、结构校验和缺失文件验证，没有登录真实小红书账号执行上传或发布。浏览器端流程依赖平台页面结构，首次使用需要在自己的账号中确认。</p>
+<p>源码与安装入口：<a href="https://github.com/Lianminx/xhs-fat-publisher">xhs-fat-publisher</a>。公众号通过 CLI 上传远端草稿，参见<a href="/blog/wechat-draft-automation/">微信公众号自动发布教程</a>。</p>
+</div></article></main><footer>© 2026 lm</footer></div></body></html>

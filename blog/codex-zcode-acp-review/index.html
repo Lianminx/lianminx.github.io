@@ -1,0 +1,89 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="ACP 不是 MCP，acpx 也不是必选项。记录一次 Windows 上的 ZCode 接入实践，并开源支持复审和短记录的 Skill。"><meta name="theme-color" content="#fdfdfc"><title>让 Codex 通过 ACP 调用 ZCode：接通、审查与持续迭代 | lm&#39;s Blog</title><link rel="icon" href="/avatar.svg" type="image/svg+xml"><link rel="canonical" href="https://lianminx.github.io/blog/codex-zcode-acp-review/"><link rel="alternate" type="application/rss+xml" title="lm's Blog" href="/rss.xml"><link rel="sitemap" href="/sitemap.xml"><meta property="og:type" content="website"><meta property="og:title" content="让 Codex 通过 ACP 调用 ZCode：接通、审查与持续迭代 | lm's Blog"><meta property="og:description" content="ACP 不是 MCP，acpx 也不是必选项。记录一次 Windows 上的 ZCode 接入实践，并开源支持复审和短记录的 Skill。"><meta property="og:url" content="https://lianminx.github.io/blog/codex-zcode-acp-review/"><link rel="stylesheet" href="/_astro/Layout.O7edXYKY.css"></head><body><a class="skip-link" href="#content">跳到正文</a><div class="page"><header class="article-header"><a class="back" href="/" aria-label="返回首页">←</a></header><main id="content"><article><h1 class="article-title">让 Codex 通过 ACP 调用 ZCode：接通、审查与持续迭代</h1><p class="article-meta"><time datetime="2026-09-11T00:00:00.000Z">Sep 11, 2026</time> · 7 分钟阅读</p><div class="prose"><p>我原来让 Codex 负责开发，再通过另一个 Agent 做审查。最近想把审查者换成本机的 ZCode，于是从一个很直接的问题开始：能不能让 Codex 调用它？</p>
+<p>这次最终接通的是 <code>Codex → acpx → zcode-acp → ZCode</code>。我把调用脚本、审查提示词和留档规则整理成了开源的 <a href="https://github.com/Lianminx/zcode-acp-review">zcode-acp-review Skill</a>。首版支持 Windows 和 PowerShell 7。</p>
+<p>比起“多接了一个模型”，我更关心三个问题：它到底怎么接通，第二个 Agent 应该审什么，以及每次调用后留下什么，才能帮助下一次改进。</p>
+<h2 id="acp-是协议不是把-zcode-包成-mcp-工具">ACP 是协议，不是把 ZCode 包成 MCP 工具</h2>
+<p><a href="https://agentclientprotocol.com/get-started/architecture">Agent Client Protocol 的架构</a>区分客户端和 Agent。客户端发起会话与请求，Agent 返回消息，也可能请求文件或终端等能力。常见本地连接通过标准输入输出传递协议消息。</p>
+<p>因此，“接入 ACP”并不意味着启动了一个 HTTP 服务，更不意味着自动获得一个 MCP 工具。</p>
+<table>
+<thead>
+<tr>
+<th>对比点</th>
+<th>这次使用的 ACP</th>
+<th>常见 MCP 工具接入</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>主要交互对象</td>
+<td>一个有会话的编码 Agent</td>
+<td>工具、资源或提示词提供方</td>
+</tr>
+<tr>
+<td>我希望它做什么</td>
+<td>阅读上下文、调查、给出审查结论</td>
+<td>执行某项暴露出来的能力</td>
+</tr>
+<tr>
+<td>本次实际接法</td>
+<td>本地进程之间通过 stdio 通信</td>
+<td>本项目没有搭建 MCP 服务</td>
+</tr>
+</tbody>
+</table>
+<p>这不是说 MCP 不能包装 Agent。可以再加一层 MCP 工具，但那是额外实现，不是 ACP 自带的结果。</p>
+<h2 id="为什么要有-acpxcodex-自己不行吗">为什么要有 acpx？Codex 自己不行吗？</h2>
+<p>我当时也问了这个问题。答案是：<strong>需要有人实现 ACP 客户端，但不一定非要 acpx。</strong></p>
+<p>这次的链路可以拆成这样：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>Codex：组织任务、调用本地脚本、核实结果</span></span>
+<span class="line"><span>  ↓</span></span>
+<span class="line"><span>review.ps1：整理输入、选择会话、保存短记录</span></span>
+<span class="line"><span>  ↓</span></span>
+<span class="line"><span>acpx：作为无界面的 ACP 客户端</span></span>
+<span class="line"><span>  ↓ ACP / stdio</span></span>
+<span class="line"><span>zcode-acp：把 ACP 请求适配到 ZCode</span></span>
+<span class="line"><span>  ↓</span></span>
+<span class="line"><span>本机 ZCode app-server：执行审查任务</span></span></code></pre>
+<p><a href="https://github.com/openclaw/acpx">acpx</a>负责客户端侧的会话和协议交互。<a href="https://github.com/william0wang/zcode-acp">zcode-acp</a>是社区提供的适配器。两者不是模型。</p>
+<p>Codex 在这里通过本地命令能力驱动客户端。如果自己写一个 ACP 客户端，也能替换 acpx；只是还得处理初始化、会话、流式消息、权限和失败状态。现阶段复用已有客户端更直接。</p>
+<p>反过来，把 Codex 暴露为 ACP Agent，也不等于让 Codex 自动获得调用其他 ACP Agent 的能力。客户端与被调用的 Agent 是两个不同角色。</p>
+<h2 id="接通时windows-的细节比概念更费时间">接通时，Windows 的细节比概念更费时间</h2>
+<p>我没有继续使用直接 CLI 问答的路径，因为之前的尝试没有达到预期。这不代表 ZCode 没有 CLI：这次仍然使用了应用内置入口，只是通过适配器进入 app-server 链路。</p>
+<p>这套实现固定了 <code>acpx 0.15.1</code> 和 <code>zcode-acp-server 0.35.1</code>。本机使用 Node.js 22.22.2、ZCode 3.10.2，内置 CLI 版本为 0.16.5。</p>
+<p>有几个值得留下来的细节：</p>
+<ul>
+<li><strong>用 argv 数组注册启动入口。</strong> 本机用字符串拼接 Agent 命令没有成功，改为明确的 Node 路径与入口文件数组后接通。acpx 的<a href="https://github.com/openclaw/acpx/blob/main/docs/config.md">配置说明</a>也提供了这一方式。</li>
+<li><strong>明确传入 ZCODE_NODE。</strong> 自动寻找运行时在这里触发过 <code>spawn EFTYPE</code>，明确使用 Node 后解决。还需要设置本地运行时与 ZCode 入口。</li>
+<li><strong>固定版本，并区分“安装成功”和“调用成功”。</strong> 本机安装钩子出过问题，使用 <code>--ignore-scripts</code> 后验证了发布包的 ACP 入口。这不代表上游所有构建功能都可用。</li>
+</ul>
+<p>第一次接通时，我让它回答：“你好，你是什么模型？”它自述为 GLM-5.3，ACP 配置事件也显示相同模型。这个结果能帮助确认会话路径和配置，但不能独立证明服务端实际使用了哪个模型。</p>
+<h2 id="审查者应该独立判断不只是附和方案">审查者应该独立判断，不只是附和方案</h2>
+<p>我的目标不是让两个 Agent 互相说“通过”。</p>
+<p>方案审查时，ZCode 应先理解需求、验收条件和现有约束，再判断方案是否合理。代码审查时，先读需求与基线代码，形成自己的判断，再看改动。它可以调查上下文，但职责是审查，不是实施。</p>
+<p>主 Agent 收到反馈后仍要核实：问题是否真实、证据是否充分、是否在本次范围内。不能把第二个 Agent 的输出直接升级成事实，也不自动循环到它说通过为止。</p>
+<p>首版和已开源脚本支持沿用同一个会话复审，同时重新提供本次文档或代码版本。我的个人工作台后来改成每次审查都新建独立会话，不继承上一轮对方案的判断。这样会增加少量上下文准备，但可以减少旧结论锚定本轮审查的风险。两种策略解决的问题不同，公开仓库目前仍保留首版行为。</p>
+<p>还有一个边界必须讲清楚：当前脚本允许 ZCode 自主使用工具，<code>-TrustWorkspace</code> 是显式确认入口。<strong>“不要修改文件”是提示词约束，不是只读沙箱。</strong> 如果材料敏感或要求强隔离，需要另外限制工作区、凭据和运行环境。</p>
+<h2 id="每次调用留一份短记录才有改进依据">每次调用留一份短记录，才有改进依据</h2>
+<p>用户提出的一个要求我很认同：每次调用结束，都留一点简单文档，后面根据记录优化。</p>
+<p>我没有选择保存完整对话和工具流水。短记录只回答这些问题：</p>
+<ol>
+<li>审了什么：任务、文档哈希、代码基线和目标。</li>
+<li>怎么调用的：会话、模型配置、脚本与提示词版本、依赖版本。</li>
+<li>有没有完成：成功、失败或中断，耗时多少。</li>
+<li>说了什么：长度受限的结论摘录。</li>
+<li>核实后怎样：有效问题、误报、待确认、处理证据和改进建议。</li>
+</ol>
+<p>首版脚本负责前面的事实记录，主 Agent 补充最后的核实。失败和复审也分别留档，并链接上一轮。我的个人工作台改为独立会话后，每轮记录只对应本次调用。</p>
+<p><code>completed</code> 只表示调用正常返回，不代表审查通过。强制结束可能留下 <code>running</code>；记录目录不可写时应在发送任务前停止。短记录也可能包含本地路径或敏感摘录，基础脱敏不能替代公开前的检查。</p>
+<p>这样下一次才能讨论：哪些提示帮助发现了问题，哪些产生了误报，是否缺了某项上下文。记录的价值来自核实与处理，而不是数量。</p>
+<h2 id="开源了什么别人怎么用">开源了什么，别人怎么用？</h2>
+<p><a href="https://github.com/Lianminx/zcode-acp-review">zcode-acp-review</a> 提供三个部分：</p>
+<ul>
+<li>Skill：告诉宿主什么时候调用，以及如何处理反馈。</li>
+<li>PowerShell 脚本：安装固定依赖、发起审查、复用会话和留档。</li>
+<li>审查提示词与使用说明：约定职责、输入和失败处理。</li>
+</ul>
+<p>使用者需要自行安装并登录 ZCode，提供本机 <code>zcode.cjs</code> 路径。仓库不分发 ZCode，也不提供模型凭据。安装命令、权限说明、卸载方式和验证范围都在 README 中。</p>
+<p>它是一个可以直接试用的小工具，还不是跨平台 Agent 编排框架。当前验证集中在 Windows 的安装与调用链、方案中的计数错误、同会话复审和失败记录；不据此宣称能稳定发现复杂业务缺陷，也没有验证每种宿主的自动 Skill 发现行为。本文上面的独立会话策略是我个人工作台的后续调整，尚未同步到该公开仓库。</p>
+<p>在这条链路稳定后，我又增加了职责隔离的测试执行者，用任务书、上下文索引、可复用用例和结构化结果约束环境测试，见<a href="/blog/zcode-test-agent-context-contract/">《我把 ZCode 变成了测试执行者》</a>。</p>
+<p>这次实践延续了我在<a href="/blog/my-ai-development-workflow/">上一篇开发流程文章</a>里的想法：让每一步有明确输入、结果和核实依据。接通另一个 Agent 只是开始，后面的审查质量和记录迭代，才是我准备继续观察的部分。</p>
+</div></article></main><footer>© 2026 lm</footer></div></body></html>

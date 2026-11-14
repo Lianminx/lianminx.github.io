@@ -1,0 +1,59 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="触发只看 description。正文只写模型不知道的步骤。结果必须一致的操作放进脚本，多种做法都成立的判断留成文字。写完用校验脚本收口，再拿到真实任务上改。"><meta name="theme-color" content="#fdfdfc"><title>Skill 写给模型：少占上下文，把易错步骤收成脚本 | lm&#39;s Blog</title><link rel="icon" href="/avatar.svg" type="image/svg+xml"><link rel="canonical" href="https://lianminx.github.io/blog/write-skills-for-the-model/"><link rel="alternate" type="application/rss+xml" title="lm's Blog" href="/rss.xml"><link rel="sitemap" href="/sitemap.xml"><meta property="og:type" content="website"><meta property="og:title" content="Skill 写给模型：少占上下文，把易错步骤收成脚本 | lm's Blog"><meta property="og:description" content="触发只看 description。正文只写模型不知道的步骤。结果必须一致的操作放进脚本，多种做法都成立的判断留成文字。写完用校验脚本收口，再拿到真实任务上改。"><meta property="og:url" content="https://lianminx.github.io/blog/write-skills-for-the-model/"><link rel="stylesheet" href="/_astro/Layout.O7edXYKY.css"></head><body><a class="skip-link" href="#content">跳到正文</a><div class="page"><header class="article-header"><a class="back" href="/" aria-label="返回首页">←</a></header><main id="content"><article><h1 class="article-title">Skill 写给模型：少占上下文，把易错步骤收成脚本</h1><p class="article-meta"><time datetime="2026-11-07T00:00:00.000Z">Nov 7, 2026</time> · 6 分钟阅读</p><div class="prose"><p>一份给人看很完整的 Skill，模型经常用不好。来历、版本记录和「专业、全面、注意平衡」都在占上下文，却没有告诉它这次该不该被选中，也没有告诉它哪一步不能写错。</p>
+<p><a href="/blog/how-to-write-agent-skills/">上一篇</a>写的是 Skill 和业务文档、工具定义怎么分工，以及怎样验收「选中了」和「做完了」。这篇只写怎么把一份 Skill 写短、写准。框架来自 <a href="https://github.com/datawhalechina/hello-agents/blob/main/Extra-Chapter/Extra08-%E5%A6%82%E4%BD%95%E5%86%99%E5%87%BA%E5%A5%BD%E7%9A%84Skill.md">hello-agents 的 Extra08</a>，下面是我按这个框架实际取舍时用的规则。</p>
+<h2 id="读者是一次新的模型调用">读者是一次新的模型调用</h2>
+<p>Skill 是一个目录。最少只有 <code>SKILL.md</code>：frontmatter 里的 <code>name</code> 和 <code>description</code>，加上正文。对话开始时，模型只看到名称和描述。描述对上了，才读正文。正文里写的「什么时候使用」，在决定要不要用它的那一刻还没被读到。</p>
+<p>所以 description 要同时写两件事：做什么，以及用户会怎么说。例如不是「代码审查技能」，而是「在用户要求审查 diff、查找缺陷或评估改动风险时使用」。文件类型和动作写进描述：新建、修改、批注、导出。</p>
+<p>给人看的文件不要放进这个目录。<code>README.md</code>、安装说明、变更日志、测试过程，都是写给下一次打开仓库的人的。模型每次都是重新开始，这些背景不会帮它做对当前任务。</p>
+<h2 id="上下文是和别的东西挤在一起的">上下文是和别的东西挤在一起的</h2>
+<p>系统提示、历史、其他 Skill 的名称和描述、用户这次的请求，占的是同一扇窗口。Skill 默认模型已经会写代码、会读报错。只补它没有的信息：这个仓库的目录约定、这个格式里容易写错的字段、必须按顺序执行的命令。</p>
+<p>动笔前先问两句。模型是不是本来就知道？这段话值不值得占掉后面的工具结果？能用一个短例子说清的，不要写成一节原则。正文保持在它被触发之后还读得完的长度。细节放到 <code>references/</code>，用到再打开。</p>
+<p>「不做什么」通常比「要专业、要有洞察」精确。后面这些词留下的都是可做可不做的空间。禁止项要能检查，并且带上改法：不要在开头用三行重复任务背景；发现缺输入时先问，不要补一组假设继续做。写完可以反过来看：如果一句正面要求能改成「不要做 X」，改完往往更不容易跑偏。</p>
+<p>正文用祈使句。写「先读 diff，再列缺陷」，不写「建议可以考虑先了解一下变更」。</p>
+<h2 id="三层不要互相抄">三层，不要互相抄</h2>
+<table>
+<thead>
+<tr>
+<th>层</th>
+<th>放什么</th>
+<th>什么时候进上下文</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>名称和 description</td>
+<td>做什么、用户哪句话该触发</td>
+<td>每次对话都在</td>
+</tr>
+<tr>
+<td><code>SKILL.md</code> 正文</td>
+<td>步骤、分流、资源放在哪</td>
+<td>触发之后</td>
+</tr>
+<tr>
+<td><code>scripts/</code>、<code>references/</code>、<code>assets/</code></td>
+<td>要执行的程序、要查阅的资料、要原样放进产物的模板</td>
+<td>用到才碰</td>
+</tr>
+</tbody>
+</table>
+<p>描述写错，Skill 不会被选中，或者不该用的时候被选中。正文写得太长，步骤会被后面的细节盖住。脚本可以执行而不必把源码读进上下文，适合那些做错的方式很多、做对的方式只有一种的操作。</p>
+<p>同一段话只放一处。正文里已经有的步骤，不要在 <code>references/</code> 再贴一遍。参考文件从 <code>SKILL.md</code> 直接链接，不要 A 指向 B、B 再指向 C。超过大约一百行的参考文件，开头放目录。大文件在正文里写明用什么关键词去搜，而不是让模型整篇读完。</p>
+<p><code>assets/</code> 里的模板、图片、样板代码不是给模型学习的。正文只写路径，以及在哪一步把它们放进输出。</p>
+<p><code>agents/openai.yaml</code> 是界面上的名字、短说明和图标，不改变模型怎么执行。短说明有长度限制，手写容易超。用生成脚本从 frontmatter 产出，<code>SKILL.md</code> 改了就重新生成，不要两处各改各的。</p>
+<h2 id="自由度按做错的代价来给">自由度按「做错的代价」来给</h2>
+<p>多种做法都成立，用文字写启发式。有推荐做法但允许变通，用伪代码或带参数的脚本。顺序固定、格式或长度不能错，就给一个少参数的脚本，让模型填参数而不是重写过程。</p>
+<p>写 Skill 本身就是这个光谱。弄清要支持哪些说法、正文怎么组织，自由度高。目录名必须是小写连字符、frontmatter 只能有约定好的字段、短说明必须落在长度范围内，自由度低。让模型手写界面配置，短说明会超长，大小写也不稳。反过来，把每一段的开头和用词都锁死，创作就变成填空。可以规定结构比例，不要规定句子。</p>
+<p>适合收成脚本的是：每次结果必须相同的转换、命名规则、格式和长度校验，以及否则就要在正文里反复重写的那段代码。适合留成文字的是：依赖这次上下文、有不止一种合理做法、需要判断取舍的步骤。</p>
+<p>skill-creator 把低自由度收成三个脚本，这个分法可以直接照用。<code>init_skill.py</code> 建立目录和带 TODO 的模板，避免从空文件开始漏掉 frontmatter。<code>generate_openai_yaml.py</code> 从名称生成界面文案，并把短说明压进允许的长度。<code>quick_validate.py</code> 检查文件在不在、YAML 能不能解析、<code>name</code> 是不是连字符形式、<code>description</code> 有没有尖括号、frontmatter 有没有多出字段。中间怎么写步骤，留给模型。起点和终点用脚本卡住。</p>
+<h2 id="六步中间可以返工">六步，中间可以返工</h2>
+<ol>
+<li>先对齐例子。这个 Skill 要接住哪些说法，不要接住哪些。一次不要问太多。范围说清再往下。</li>
+<li>把例子里会反复出现的东西列成清单。旋转 PDF 这种操作进 <code>scripts/</code>。每次都要查的表结构进 <code>references/</code>。会原样进产物的样板进 <code>assets/</code>。</li>
+<li>新建时跑初始化脚本，不要手搭目录。模板里的 TODO 是留给这次任务填的，示例文件用完就换掉或删掉。</li>
+<li>先把脚本跑通，再写正文。正文写过程、领域里模型不知道的细节、以及每份资源在哪一步用。不写它显而易见的常识。</li>
+<li>跑校验。不过就改，改完再跑。</li>
+<li>拿到真实任务上用。卡住的地方改正文或改资源，再试一次。第一次写完的短说明如果还是「一个有用的技能」，就改成用户能说出口的那件具体的事。</li>
+</ol>
+<p>名称用小写、数字和连字符，和目录名一致，优先短的动作短语。需要和某个工具绑在一起时，把工具名放进前缀，例如 <code>gh-address-comments</code>。</p>
+<p>Skill 不是把一份人类文档搬进 <code>SKILL.md</code>。它是在一次有限的上下文里，告诉模型何时上场、按什么步骤做、哪些步骤不许自由发挥。</p>
+</div></article></main><footer>© 2026 lm</footer></div></body></html>

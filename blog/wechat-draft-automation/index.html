@@ -1,0 +1,132 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="开源 wechat-news-draft Skill 的安装、配置与使用方法：整理素材、生成文章和封面、上传公众号草稿，最后人工确认发布。"><meta name="theme-color" content="#fdfdfc"><title>微信公众号自动发布教程：用 Agent 把素材送进草稿箱 | lm&#39;s Blog</title><link rel="icon" href="/avatar.svg" type="image/svg+xml"><link rel="canonical" href="https://lianminx.github.io/blog/wechat-draft-automation/"><link rel="alternate" type="application/rss+xml" title="lm's Blog" href="/rss.xml"><link rel="sitemap" href="/sitemap.xml"><meta property="og:type" content="website"><meta property="og:title" content="微信公众号自动发布教程：用 Agent 把素材送进草稿箱 | lm's Blog"><meta property="og:description" content="开源 wechat-news-draft Skill 的安装、配置与使用方法：整理素材、生成文章和封面、上传公众号草稿，最后人工确认发布。"><meta property="og:url" content="https://lianminx.github.io/blog/wechat-draft-automation/"><link rel="stylesheet" href="/_astro/Layout.O7edXYKY.css"></head><body><a class="skip-link" href="#content">跳到正文</a><div class="page"><header class="article-header"><a class="back" href="/" aria-label="返回首页">←</a></header><main id="content"><article><h1 class="article-title">微信公众号自动发布教程：用 Agent 把素材送进草稿箱</h1><p class="article-meta"><time datetime="2026-09-15T00:00:00.000Z">Sep 15, 2026</time> · 6 分钟阅读</p><div class="prose"><p>每天把素材改成文章、排版、处理封面，再复制到公众号后台，重复操作很容易比写作本身更费时间。我把这段流程整理成了 <a href="https://github.com/Lianminx/wechat-news-draft">wechat-news-draft</a>，可以交给支持本地文件与命令执行的 Agent 使用。</p>
+<p>先说清“自动发布”的范围：<strong>这份 Skill 自动准备内容并上传公众号草稿箱，最后由人在后台检查和发布。</strong> 本地文章、远端草稿、公开文章是三个不同结果。</p>
+<p>本文基于开源仓库的 <code>SKILL.md</code>、<code>references/environment.md</code>，以及本机 md2wechat 2.4.0 的命令帮助整理。它适合已有 Markdown 素材、希望减少编辑搬运工作的人；不是零配置的公众号托管服务。</p>
+<h2 id="先看整条流程">先看整条流程</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>你提供的 Markdown 素材</span></span>
+<span class="line"><span>  → Agent 选择主题、写文章、保留来源</span></span>
+<span class="line"><span>  → article.md + cover.png + editorial-notes.md</span></span>
+<span class="line"><span>  → md2wechat 检查并转换成 HTML</span></span>
+<span class="line"><span>  → 上传公众号草稿箱，取得 media_id</span></span>
+<span class="line"><span>  → 人工检查排版、图片和事实，确认发布</span></span></code></pre>
+<p>Skill 负责告诉 Agent 该读什么、做什么、在哪里停止；<a href="https://github.com/geekjourneyx/md2wechat-skill">md2wechat</a>负责转换和上传。仓库没有捆绑大模型、公众号账号或转换服务额度。</p>
+<h2 id="第一步安装-skill-和命令行工具">第一步：安装 Skill 和命令行工具</h2>
+<p>准备 Git、Node.js/npm，以及能够读写本地文件、执行命令的 Agent。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sh"><code><span class="line"><span style="color:#B392F0">git</span><span style="color:#9ECBFF"> clone</span><span style="color:#9ECBFF"> https://github.com/Lianminx/wechat-news-draft.git</span></span>
+<span class="line"><span style="color:#79B8FF">cd</span><span style="color:#9ECBFF"> wechat-news-draft</span></span>
+<span class="line"><span style="color:#B392F0">npm</span><span style="color:#9ECBFF"> install</span><span style="color:#79B8FF"> -g</span><span style="color:#9ECBFF"> @geekjourneyx/md2wechat@2.4.0</span></span>
+<span class="line"><span style="color:#B392F0">md2wechat</span><span style="color:#9ECBFF"> version</span><span style="color:#79B8FF"> --json</span></span></code></pre>
+<p>这里刻意固定 <strong>2.4.0</strong>，因为本文核对的是这个版本，不代表它是最新版本。安装的是带作用域的 <code>@geekjourneyx/md2wechat</code>，不要误装同名的无作用域 npm 包。安装过程还需要能访问上游 Release 下载地址。</p>
+<p>可以将整个仓库放入所用 Agent 的 Skill 目录，也可以先不处理自动发现，直接告诉 Agent：“读取这个仓库的 <code>SKILL.md</code>，按它执行。”只下载文件并不意味着当前会话已经加载了 Skill。</p>
+<h2 id="第二步分别配置公众号和转换服务">第二步：分别配置公众号和转换服务</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sh"><code><span class="line"><span style="color:#B392F0">md2wechat</span><span style="color:#9ECBFF"> config</span><span style="color:#9ECBFF"> init</span></span></code></pre>
+<p>按生成的 <code>~/.config/md2wechat/config.yaml</code> 模板，在本机填写配置。如果之前已经配好，不必重复初始化。</p>
+<p>这里有两组容易混淆的配置：</p>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th>作用</th>
+<th>失败影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>公众号 AppID、Secret，对应 <code>WECHAT_APPID</code>、<code>WECHAT_SECRET</code></td>
+<td>调用公众号接口，创建草稿</td>
+<td>草稿上传可能失败</td>
+</tr>
+<tr>
+<td>md2wechat 转换服务配置</td>
+<td>将 Markdown 转为公众号 HTML</td>
+<td>转换可能失败，不等于公众号密钥错误</td>
+</tr>
+</tbody>
+</table>
+<p>实际账号还需要具备对应接口能力，并按公众号后台要求配置 IP 白名单。不要把某类账号“必定可用”当作安装前提，先核对自己的后台权限。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sh"><code><span class="line"><span style="color:#B392F0">md2wechat</span><span style="color:#9ECBFF"> config</span><span style="color:#9ECBFF"> validate</span></span></code></pre>
+<p>配置校验通过后，再继续实际转换。真实密钥只放本机配置或安全的环境变量中，不要贴进 Agent 对话、博客、Git，也不要把完整配置输出当作公开排错日志。</p>
+<h2 id="第三步准备输入给-agent-一项完整任务">第三步：准备输入，给 Agent 一项完整任务</h2>
+<p>在你的内容工作目录下准备：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>inputs/</span></span>
+<span class="line"><span>  ai-briefing.md</span></span>
+<span class="line"><span>  market-briefing.md</span></span>
+<span class="line"><span>output/</span></span>
+<span class="line"><span>  wechat/</span></span></code></pre>
+<p>这两个名字只是示例。我的常用场景是结合 AI 和财经简报，但 Skill 也可以处理其他有来源的文章。组合日报必须使用同一天的两份材料；少了一份，就说明缺失，不拿旧日期材料补成“今日新闻”。</p>
+<p>可以这样下任务，将路径换成实际位置：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>读取 wechat-news-draft/SKILL.md。</span></span>
+<span class="line"><span>来源：inputs/ai-briefing.md、inputs/market-briefing.md。</span></span>
+<span class="line"><span>根据这两份材料写一篇公众号文章，日期 2026-09-15，署名“示例作者”。</span></span>
+<span class="line"><span>输出到 output/wechat/2026-09-15。</span></span>
+<span class="line"><span>围绕一个具体问题组织内容，保留来源，区分事实与个人判断。</span></span>
+<span class="line"><span>生成文章、HTML、封面和编辑记录，检查后上传公众号草稿箱。</span></span>
+<span class="line"><span>不要公开发布。缺少来源或配置时保留已完成内容并报告阻塞。</span></span></code></pre>
+<p>Agent 应产出：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>article.md             正文及元数据</span></span>
+<span class="line"><span>article.html           本地排版结果</span></span>
+<span class="line"><span>cover.png              封面</span></span>
+<span class="line"><span>editorial-notes.md      来源、选题、修改和缺失证据</span></span></code></pre>
+<p>封面可以用现有图片或另外生成，但要检查实际尺寸和可读性。正文插图是可选项，不必为了满足固定图片数量塞入无关配图。</p>
+<h2 id="第四步先检查再上传一次">第四步：先检查，再上传一次</h2>
+<p>在文章输出目录执行以下命令，让相对图片路径按文章目录解析：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sh"><code><span class="line"><span style="color:#B392F0">md2wechat</span><span style="color:#9ECBFF"> inspect</span><span style="color:#9ECBFF"> article.md</span></span>
+<span class="line"><span style="color:#B392F0">md2wechat</span><span style="color:#9ECBFF"> convert</span><span style="color:#9ECBFF"> article.md</span><span style="color:#79B8FF"> -o</span><span style="color:#9ECBFF"> article.html</span></span></code></pre>
+<p>Markdown 开头的元数据示例：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="yaml"><code><span class="line"><span style="color:#B392F0">---</span></span>
+<span class="line"><span style="color:#85E89D">title</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"今天的AI变化，开发者该关注什么"</span></span>
+<span class="line"><span style="color:#85E89D">author</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"示例作者"</span></span>
+<span class="line"><span style="color:#85E89D">digest</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"从两份材料中提取一个问题，并说明哪些事实已经确认。"</span></span>
+<span class="line"><span style="color:#85E89D">date</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"2026-09-15"</span></span>
+<span class="line"><span style="color:#85E89D">status</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">draft</span></span>
+<span class="line"><span style="color:#B392F0">---</span></span></code></pre>
+<p>本文命令基线使用标题 32 字、作者 16 字、摘要 128 字的约束；以安装版本的 <code>inspect</code> 结果为准。检查正文是否又出现了重复大标题，来源链接是否保留，图片是否能加载。</p>
+<p>打开 HTML，按手机宽度检查长段落、图片和留白。确认后执行：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sh"><code><span class="line"><span style="color:#B392F0">md2wechat</span><span style="color:#9ECBFF"> convert</span><span style="color:#9ECBFF"> article.md</span><span style="color:#79B8FF"> --draft</span><span style="color:#79B8FF"> --cover</span><span style="color:#9ECBFF"> cover.png</span></span></code></pre>
+<p><strong>这一步会创建真实公众号草稿。</strong> 保存成功回执中的 <code>media_id</code>，随后去后台核对内容。</p>
+<p>如果已经有审核过的 HTML，也存在另一条入口：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sh"><code><span class="line"><span style="color:#B392F0">md2wechat</span><span style="color:#9ECBFF"> test-draft</span><span style="color:#9ECBFF"> article.html</span><span style="color:#9ECBFF"> cover.png</span><span style="color:#79B8FF"> --json</span></span></code></pre>
+<p>不要被 <code>test</code> 误导：它同样会创建真实草稿，不是离线预演。使用这条路线时，尤其要核对后台生成的标题、作者和摘要，不能假设它与 Markdown 路线完全一致。两条上传路线选一条，避免重复草稿。</p>
+<h2 id="第五步人工确认发布">第五步：人工确认发布</h2>
+<p>进入公众号后台，找到对应草稿，检查标题、摘要、封面裁切、正文图片、外链和移动端预览。涉及事实、引用或个人判断的内容，再读一遍。检查完成后，由你执行最终发布。</p>
+<p><code>media_id</code> 证明取得了草稿对象，不是公开文章链接。只有后台实际发布成功，并取得可访问的文章结果，才应记录为“已发布”。</p>
+<h2 id="常见失败怎么处理">常见失败怎么处理</h2>
+<table>
+<thead>
+<tr>
+<th>现象</th>
+<th>先检查什么</th>
+<th>保留什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>转换服务报错</td>
+<td>转换服务配置和当前命令版本</td>
+<td>Markdown、封面、编辑记录</td>
+</tr>
+<tr>
+<td>公众号接口失败</td>
+<td>账号接口权限、凭据、白名单和错误码</td>
+<td>本地 HTML 与失败阶段</td>
+</tr>
+<tr>
+<td>命令超时，结果不明确</td>
+<td>先看后台是否已有草稿，再决定重试</td>
+<td>原始回执，避免重复上传</td>
+</tr>
+<tr>
+<td>图片本地能看，后台异常</td>
+<td>图片上传、路径替换、后台预览</td>
+<td>原图及文章路径</td>
+</tr>
+<tr>
+<td>日期材料不全</td>
+<td>是否真的提供了该日来源</td>
+<td>缺失清单，不编造内容</td>
+</tr>
+</tbody>
+</table>
+<p>如果接入每日调度，先调度到“生成内容与草稿”这一阶段，并为同一天的任务保留输出目录和草稿回执。不要因为一次超时就无限重跑，也不要把每天生成新文章等同于每天适合发布。</p>
+<p>本轮核对了 CLI 版本、命令帮助和文章元数据检查；没有为写教程而向真实公众号新增草稿或群发。读者自己的账号配置与后台排版仍需要首次验证。</p>
+<p>小红书使用的是另一条基于浏览器的流程，见<a href="/blog/xiaohongshu-draft-automation/">小红书自动发布教程</a>。两套流程都保留了人工确认这一步。</p>
+</div></article></main><footer>© 2026 lm</footer></div></body></html>

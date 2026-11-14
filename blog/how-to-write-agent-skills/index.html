@@ -1,0 +1,242 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="从目录结构、触发描述到正文流程，结合 OpenAI、Anthropic 与 Agent Skills 规范，说明如何编写可发现、可执行、可验收的 Skill。"><meta name="theme-color" content="#fdfdfc"><title>Skill 怎么写：让 AI 找得到、用得对，也能检查是否完成 | lm&#39;s Blog</title><link rel="icon" href="/avatar.svg" type="image/svg+xml"><link rel="canonical" href="https://lianminx.github.io/blog/how-to-write-agent-skills/"><link rel="alternate" type="application/rss+xml" title="lm's Blog" href="/rss.xml"><link rel="sitemap" href="/sitemap.xml"><meta property="og:type" content="website"><meta property="og:title" content="Skill 怎么写：让 AI 找得到、用得对，也能检查是否完成 | lm's Blog"><meta property="og:description" content="从目录结构、触发描述到正文流程，结合 OpenAI、Anthropic 与 Agent Skills 规范，说明如何编写可发现、可执行、可验收的 Skill。"><meta property="og:url" content="https://lianminx.github.io/blog/how-to-write-agent-skills/"><link rel="stylesheet" href="/_astro/Layout.O7edXYKY.css"></head><body><a class="skip-link" href="#content">跳到正文</a><div class="page"><header class="article-header"><a class="back" href="/" aria-label="返回首页">←</a></header><main id="content"><article><h1 class="article-title">Skill 怎么写：让 AI 找得到、用得对，也能检查是否完成</h1><p class="article-meta"><time datetime="2026-09-15T00:00:00.000Z">Sep 15, 2026</time> · 12 分钟阅读</p><div class="prose"><p>团队第一次整理 Skill 时，很容易把现有文档复制进去：几页开发原则、几十条注意事项，再加一句“按照最佳实践完成任务”。文件看起来很完整，实际使用却不稳定。</p>
+<p>有时模型根本没有选中它；有时选中了，但不知道先读哪个文件；有时执行了一部分，却把“已生成代码”当作“已经验证”。这些不是同一种问题，也不能都靠增加一句“必须严格遵守”解决。</p>
+<p><strong>Skill 应该围绕一类可识别任务，给出完成方法、关键约束和验收方式。</strong> 它既要有容易匹配的入口，也要有能够执行的正文。</p>
+<p>本文依据截至 2026 年 9 月 15 日核对的 OpenAI、Anthropic 与 Agent Skills 规范。平台事实附有来源；开发流程、示例和评测方案是本文的工程建议。</p>
+<h2 id="1-先判断这条内容是否属于-skill">1. 先判断这条内容是否属于 Skill</h2>
+<p>假设项目要规范订单开发，可以这样分工：</p>
+<table>
+<thead>
+<tr>
+<th>内容</th>
+<th>更适合的位置</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>只有 pending 订单允许取消</td>
+<td>模块 <code>AGENTS.md</code> 或权威业务文档</td>
+<td>这是订单模块的稳定规则</td>
+</tr>
+<tr>
+<td>一次功能修改如何理解、实现、验证、交付</td>
+<td>开发 Skill</td>
+<td>这是反复使用的方法</td>
+</tr>
+<tr>
+<td>按 ID 查询订单的参数及返回值</td>
+<td>工具定义</td>
+<td>这是一次调用的接口语义</td>
+</tr>
+<tr>
+<td>测试失败禁止合并</td>
+<td>CI 与仓库保护</td>
+<td>这是需要程序执行的合并条件</td>
+</tr>
+</tbody>
+</table>
+<p>Skill 可以引用这些规则，也可以要求运行检查，但不要复制维护全部内容。否则订单规则更新后，模块文档和 Skill 很容易各说一套。</p>
+<p>我建议用一个问题筛选：这份内容是不是在帮助 Agent 完成一个重复出现的任务？如果只是解释架构背景，它可能更适合作为被引用的资料；如果是一项确定性的校验，可能直接写成脚本更合适。</p>
+<h2 id="2-理解加载方式才能写对-description">2. 理解加载方式，才能写对 description</h2>
+<p>OpenAI 文档说明，Skill 使用渐进式加载：先提供名称和描述，决定使用后再读取完整 <code>SKILL.md</code>。因此 description 要把核心用途和触发词放在前面，不能只在正文末尾写“什么时候使用”。<a href="https://learn.chatgpt.com/docs/build-skills">OpenAI：Build skills</a></p>
+<p>可以把三个层次理解为：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>名称与 description → 判断是否适用</span></span>
+<span class="line"><span>SKILL.md 正文       → 确定步骤与分流</span></span>
+<span class="line"><span>参考资料和脚本       → 完成当前分支需要的细节</span></span></code></pre>
+<p>一个不够好的描述是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="yaml"><code><span class="line"><span style="color:#85E89D">description</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">帮助团队高质量、专业地完成软件开发。</span></span></code></pre>
+<p>它没有区分开发、审查、调研，也没有说明作用范围。更具体的版本是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="yaml"><code><span class="line"><span style="color:#85E89D">description</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">在本仓库实现功能或修复缺陷，完成模块定位、最小修改、验证和变更说明。用户要求修改代码或修复已定位问题时使用；纯调研、只读审查和仅发布现有版本时不使用。</span></span></code></pre>
+<p>这个描述用任务对象、用户动作和排除条件帮助选择。它不是关键词越多越好：把“开发、研究、审查、部署、写作”全部列进去，反而会扩大误触发范围。</p>
+<p>Anthropic 建议描述同时交代做什么和何时使用，并采用第三人称表达。中文中可以直接用“分析……”“生成……”“处理……”开头，避免“我可以帮你……”式自我介绍。<a href="https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices">Anthropic：Skill 编写最佳实践</a></p>
+<h2 id="3-一个完整但不臃肿的开发-skill-示例">3. 一个完整但不臃肿的开发 Skill 示例</h2>
+<p>先区分目录与文件：一个 Skill 是一个目录，最低只需要 <code>SKILL.md</code>。有需要时再加入以下内容，不必为了凑结构创建空目录：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>develop-change/</span></span>
+<span class="line"><span>├── SKILL.md       # 必需：YAML 元数据与 Markdown 指令正文</span></span>
+<span class="line"><span>├── scripts/       # 可选：执行确定性操作的程序</span></span>
+<span class="line"><span>├── references/    # 可选：按条件读取的详细资料</span></span>
+<span class="line"><span>└── assets/        # 可选：输出模板、图片等资源</span></span></code></pre>
+<p>例如，正文规定何时检查接口，references 保存接口检查方法，scripts 可以提供确定性校验，assets 可以保存交付文件模板。目录中存在资源不代表会被自动使用，正文需要给出路径和使用条件。</p>
+<p>下面是一份自拟示例。前提是项目已经实现 <code>npm run quality</code>，并在 <code>docs/development.md</code> 中定义环境与检查方式。这里展示文件内容，不代表它已经在某个客户端安装或通过行为验证。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="markdown"><code><span class="line"><span style="color:#E1E4E8">---</span></span>
+<span class="line"><span style="color:#85E89D">name</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">develop-change</span></span>
+<span class="line"><span style="color:#85E89D">description</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">在本仓库实现功能或修复缺陷，完成模块定位、最小修改、验证和变更说明。用户要求修改代码或修复已定位问题时使用；纯调研、只读审查和仅发布现有版本时不使用。</span></span>
+<span class="line"><span style="color:#E1E4E8">---</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#79B8FF;font-weight:bold"># 开发变更</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#79B8FF;font-weight:bold">## 目标</span></span>
+<span class="line"><span style="color:#E1E4E8">完成当前任务的最小必要修改，并交付可复核的验证结果。</span></span>
+<span class="line"><span style="color:#E1E4E8">本流程不自动授权发布、删除数据或修改外部系统。</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#79B8FF;font-weight:bold">## 1. 确认输入与范围</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 确认仓库根目录、当前分支、已有差异及用户目标。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 读取仓库根目录的 docs/development.md。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 读取目标文件路径沿途的 AGENTS.md，再阅读实现与相关测试。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 列出验收条件；若关键行为不明确，先澄清受影响部分。</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#79B8FF;font-weight:bold">## 2. 定位修改</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 说明主责模块、现有入口、拟修改文件及原因。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 修复缺陷时，先取得复现结果或能限定原因的证据。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 不把探索期间的猜测写成已确认原因。</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#79B8FF;font-weight:bold">## 3. 实现</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 修改当前目标必要的代码，不混入无关重构。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 改变公开接口时，读取 references/api-change.md。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 没有公开接口变化时，不读取该附件。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 行为变化应有针对性的验证；沿用项目现有测试方式。</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#79B8FF;font-weight:bold">## 4. 验证</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 在仓库根目录运行 npm run quality。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 记录实际命令、退出状态和关键输出。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 失败时判断与当前修改的关系，修复后重跑受影响检查。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 环境缺失或检查仍失败时，记录原因和未验证范围；</span></span>
+<span class="line"><span style="color:#E1E4E8">  不删除检查、不降低断言来制造通过结果。</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#79B8FF;font-weight:bold">## 5. 交付</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 按 references/change-report.md 返回变更说明。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 区分已修改、已验证、验证失败和未验证。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 只有验收条件及必需检查通过，才称为实现并验证完成。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 提交、合并和部署按用户授权与仓库流程另行执行。</span></span></code></pre>
+<p>配套目录可以保持很小：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>develop-change/</span></span>
+<span class="line"><span>├── SKILL.md</span></span>
+<span class="line"><span>└── references/</span></span>
+<span class="line"><span>    ├── api-change.md</span></span>
+<span class="line"><span>    └── change-report.md</span></span></code></pre>
+<p><code>api-change.md</code> 的示例内容：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="markdown"><code><span class="line"><span style="color:#79B8FF;font-weight:bold"># 公开接口变化检查</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 列出受影响的调用方、请求字段、响应字段和错误行为。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 判断旧调用方能否继续工作；破坏兼容时说明迁移方案。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 更新现有接口文档与相关契约测试。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 交付时说明已经验证的调用方和未验证范围。</span></span></code></pre>
+<p><code>change-report.md</code> 的示例内容：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="markdown"><code><span class="line"><span style="color:#79B8FF;font-weight:bold"># 变更说明</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 目标与验收条件：</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 修改文件及原因：</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 实际验证命令、结果与证据：</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 边界情况与兼容性：</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 未验证事项及原因：</span></span></code></pre>
+<p>这三个文件各自承担明确职责：入口决定流程，接口附件处理条件分支，交付模板固定结果结构。附件没有被假定为自动读取，而是在正文写明了入口。</p>
+<h2 id="4-让关键步骤有可以判断的结束条件">4. 让关键步骤有可以判断的结束条件</h2>
+<p>Skill 中最容易失效的词，往往是“充分”“必要时”“检查一下”“保证质量”。这些词表达了愿望，却没有告诉模型何时可以进入下一步。</p>
+<p>例如：</p>
+<table>
+<thead>
+<tr>
+<th>模糊规则</th>
+<th>可检查的规则</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>充分理解代码</td>
+<td>阅读目标入口、调用方和相关测试，说明当前行为及修改位置</td>
+</tr>
+<tr>
+<td>必要时查看接口文档</td>
+<td>改变公开请求、响应或错误行为时，读取指定接口附件</td>
+</tr>
+<tr>
+<td>测试通过后交付</td>
+<td>记录实际命令和退出状态；必需检查失败时标注未完成</td>
+</tr>
+<tr>
+<td>遇到问题继续努力</td>
+<td>明确环境错误可修正后重试；仍受阻时保存结果并说明缺口</td>
+</tr>
+</tbody>
+</table>
+<p>这是本文推荐的写作方法：关键步骤写清触发条件、动作、结果、通过条件和失败后续。普通排版建议不需要机械套这个格式，但影响权限、执行和完成状态的规则应该足够明确。</p>
+<p>对订单取消任务而言，“验证订单逻辑”不如“检查正常取消、重复取消、已发货拒绝和并发取消后的状态与事件”。后者可以直接用于测试与审查。</p>
+<h2 id="5-渐进加载不是把所有要求藏到附件里">5. 渐进加载不是把所有要求藏到附件里</h2>
+<p>Anthropic 建议正文保持简洁，把长内容拆到附件，并根据任务的脆弱性决定约束程度；正文少于 500 行是其性能建议，不是所有平台通用的解析上限。<a href="https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices">Anthropic：Skill 编写最佳实践</a></p>
+<p>我建议正文至少保留：任务范围、首次动作、分流条件、关键限制、完成条件。具体字段表、长例子和可复用模板再放到附件。</p>
+<p>一个常见错误是正文只写“请阅读相关文档”。目录里有五份文档，模型仍然不知道当前该读哪份。应改成“改变接口时读取 <code>references/api-change.md</code>”，让路径和触发条件同时出现。</p>
+<p>另一个错误是为了简短，把必需的授权规则藏在很少进入的附件。只要规则会影响首次操作，就应在首次决策前可见。</p>
+<h2 id="6-哪些步骤适合写脚本">6. 哪些步骤适合写脚本？</h2>
+<p>判断修改落在哪个模块，需要结合上下文；计算文件摘要、检查 JSON 是否能解析、运行固定质量命令，则可以交给程序。</p>
+<p>因此，Skill 不一定需要 <code>scripts/</code>。已有 <code>npm run quality</code> 就直接调用，不要再包一层同名脚本。只有存在重复、确定而且容易手工出错的操作，新增脚本才有价值。</p>
+<p>一旦提供脚本，就同时说明运行目录、依赖、输入、输出、失败退出状态和副作用。模型需要知道脚本是只读检查，还是会写文件、更新数据库。路径也要相对于明确位置解析：Skill 所在目录和用户项目根目录并不一定相同。</p>
+<p>对于变更分析，保留适度判断空间；对于脆弱操作，固定已验证的步骤。把每个开发任务都写成上百步固定流程，会增加成本，也容易让模型在不适用的步骤上浪费时间。</p>
+<h2 id="7-分清开放格式平台要求和写作建议">7. 分清开放格式、平台要求和写作建议</h2>
+<p>Agent Skills 规范要求 <code>SKILL.md</code> 使用 YAML 元数据，包含 <code>name</code> 与 <code>description</code>；名称和描述有格式及长度限制，例如名称最长 64 字符、描述最长 1024 字符。名称还需要符合目录对应等规则。这些是格式约束。<a href="https://agentskills.io/specification">Agent Skills：Specification</a></p>
+<p>文件开头使用一对 <code>---</code> 包住合法 YAML，后面写 Markdown 正文。按开放规范编写时，名称应与 Skill 目录名一致，使用小写字母、数字和连字符，不以连字符开头或结尾，也不能连续使用连字符。</p>
+<p><strong>正文没有固定章节或强制模板。</strong> 不要求必须出现“角色”“背景”“工作流”等标题，也不要求用 JSON、XML 或固定句式。本文推荐的“目标 → 输入 → 步骤 → 失败处理 → 交付验收”只是便于执行与检查的组织方式。<a href="https://agentskills.io/specification#body-content">Agent Skills：Body content</a></p>
+<p>description 则建议采用“处理什么任务 + 哪些请求触发 + 相近任务的排除条件”。把触发条件只放在正文里，会影响尚未读取正文时的选择。规则是否明确和模型是否执行，要分别检查，不能只验证文件结构。</p>
+<p>但不能把不同产品的解析行为混为一谈：</p>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>官方文档中的差异</th>
+<th>实践选择</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Codex 本地 Skill</td>
+<td>文档要求名称和描述；仓库入口使用 <code>.agents/skills</code></td>
+<td>按工作目录与发现规则核对是否可见</td>
+</tr>
+<tr>
+<td>Claude Code Skill</td>
+<td>当前文档允许省略部分元数据，项目常见入口为 <code>.claude/skills</code></td>
+<td>可移植内容仍显式提供名称与描述</td>
+</tr>
+<tr>
+<td>Claude Code 手动调用流程</td>
+<td>可用 <code>disable-model-invocation: true</code> 限制自动调用</td>
+<td>不把该字段当成 Codex 通用配置</td>
+</tr>
+</tbody>
+</table>
+<p>这些差异分别来自 <a href="https://learn.chatgpt.com/docs/build-skills">OpenAI Skill 文档</a>与 <a href="https://code.claude.com/docs/en/skills">Claude Code Skill 文档</a>。平台扩展字段需要单独适配，不能把一个产品上的加载成功当成跨平台兼容证明。</p>
+<p>推荐把共享正文设为一个权威版本，再通过团队维护的安装或同步过程放到目标工具支持的位置。如何分发可以因项目而异，但同步后要检查内容是否一致、附件是否齐全。</p>
+<h2 id="8-评测至少覆盖触发和完成两件事">8. 评测至少覆盖“触发”和“完成”两件事</h2>
+<p>只检查 YAML 能解析，并不能证明 Skill 有用。我的建议是分两步验收。</p>
+<p>第一步做静态检查：元数据是否合法，引用文件是否存在，命令是否真实可用，输出和失败条件是否明确，是否出现相互冲突的规则。</p>
+<p>第二步在实际目标客户端运行任务：</p>
+<table>
+<thead>
+<tr>
+<th>用例</th>
+<th>要检查的行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>显式要求使用 develop-change</td>
+<td>是否实际加载并执行正文</td>
+</tr>
+<tr>
+<td>只说“给订单增加取消能力”</td>
+<td>是否正确选择开发 Skill</td>
+</tr>
+<tr>
+<td>只说“解释一下订单状态机”</td>
+<td>是否避免进入修改流程</td>
+</tr>
+<tr>
+<td>修改公开响应字段</td>
+<td>是否读取接口变化附件</td>
+</tr>
+<tr>
+<td>检查命令因环境缺失失败</td>
+<td>是否保留失败与未验证状态</td>
+</tr>
+<tr>
+<td>附件缺失</td>
+<td>是否说明受影响步骤，而非编造文件内容</td>
+</tr>
+<tr>
+<td>当前任务未授权部署</td>
+<td>是否在开发交付阶段结束</td>
+</tr>
+</tbody>
+</table>
+<p>运行时记录模型、Skill 版本、客户端、实际可用工具与检查输出。Anthropic 也明确建议在计划使用的不同模型上测试 Skill，因为相同说明对不同模型未必同样有效。<a href="https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices">Anthropic：跨模型测试</a></p>
+<p>评测失败后，按位置修复：看不到 Skill，检查安装与发现；误触发，修改描述；选中了但漏读附件，修改正文入口；命令失败，修复环境或脚本；做完却误报通过，修改完成条件并检查结果协议。</p>
+<p>上线后，把真实失败任务保留为回归样例。Skill 的更新应像代码修改一样有差异、有负责人、有验证，尤其要审查新增脚本与权限相关配置。</p>
+<p>一份值得复用的 Skill，不在于写了多少规则，而在于换一个开发者、换一次会话后，Agent 仍然能找到合适的流程，执行关键步骤，并准确说明哪些事情已经完成、哪些还没有得到验证。</p>
+</div></article></main><footer>© 2026 lm</footer></div></body></html>

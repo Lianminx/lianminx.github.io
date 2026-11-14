@@ -1,0 +1,112 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="通过同一个订单查询示例，对比 OpenAI 与 Anthropic 工具格式，讲清 description、schema、examples 和 input_examples 的区别。"><meta name="theme-color" content="#fdfdfc"><title>用一个订单查询示例，讲清 Tool Description、Schema 和 Example | lm&#39;s Blog</title><link rel="icon" href="/avatar.svg" type="image/svg+xml"><link rel="canonical" href="https://lianminx.github.io/blog/tool-description-schema-examples/"><link rel="alternate" type="application/rss+xml" title="lm's Blog" href="/rss.xml"><link rel="sitemap" href="/sitemap.xml"><meta property="og:type" content="website"><meta property="og:title" content="用一个订单查询示例，讲清 Tool Description、Schema 和 Example | lm's Blog"><meta property="og:description" content="通过同一个订单查询示例，对比 OpenAI 与 Anthropic 工具格式，讲清 description、schema、examples 和 input_examples 的区别。"><meta property="og:url" content="https://lianminx.github.io/blog/tool-description-schema-examples/"><link rel="stylesheet" href="/_astro/Layout.O7edXYKY.css"></head><body><a class="skip-link" href="#content">跳到正文</a><div class="page"><header class="article-header"><a class="back" href="/" aria-label="返回首页">←</a></header><main id="content"><article><h1 class="article-title">用一个订单查询示例，讲清 Tool Description、Schema 和 Example</h1><p class="article-meta"><time datetime="2026-09-15T00:00:00.000Z">Sep 15, 2026</time> · 6 分钟阅读</p><div class="prose"><p>一个工具的 description 如果只写“查询订单信息”，模型仍然需要猜：输入的是订单 ID 还是支付交易号？能按姓名搜索吗？未找到是否代表不存在？</p>
+<p>我会把工具定义分成三个部分：<strong>description 写使用语义，schema 写参数结构，example 展示实际怎么填。</strong> 下面用同一个订单查询工具，直接对比 OpenAI 与 Anthropic 的格式。</p>
+<p>本文依据截至 2026 年 9 月 15 日核对的官方文档。工具是自拟示例，假设服务端已经实现相应的查询范围与返回行为，不代表平台内置能力。</p>
+<h2 id="1-description-建议按什么格式写">1. Description 建议按什么格式写？</h2>
+<p>没有强制模板，建议按以下顺序组织：</p>
+<blockquote>
+<p>做什么 → 什么时候用 → 不支持什么 → 返回什么 → 副作用与异常含义。</p>
+</blockquote>
+<p>例如：</p>
+<blockquote>
+<p>按订单 ID 查询当前状态，适用于用户询问指定订单的处理进度。仅支持精确 ID 查询，不支持按姓名搜索，也不会取消订单。成功返回订单状态和更新时间。查询范围限于当前身份可访问的订单，未找到不能直接解释为订单不存在。</p>
+</blockquote>
+<p>每句话都在帮助模型决策：查询方式说明怎么用，适用范围帮助选择工具，“不会取消”避免误报操作完成，返回内容说明能回答什么，查询限制避免错误推断。</p>
+<p>OpenAI 建议解释用途、参数格式和输出含义；Anthropic 也强调适用场景和限制，并建议至少使用三到四句话描述工具。这是写作建议，不是 API 要求的固定句式。<a href="https://developers.openai.com/api/docs/guides/function-calling">OpenAI：Function calling</a>、<a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools">Anthropic：Define tools</a></p>
+<h2 id="2-openai-的工具格式以-responses-api-为例">2. OpenAI 的工具格式：以 Responses API 为例</h2>
+<p>下面是放入请求 tools 数组中的一个工具定义，不是完整 API 请求：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="json"><code><span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#79B8FF">  "type"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"function"</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#79B8FF">  "name"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"get_order_status"</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#79B8FF">  "description"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"按订单 ID 查询当前状态，适用于用户询问指定订单的处理进度。仅支持精确 ID 查询，不支持按姓名搜索，也不会取消订单。成功返回订单状态和更新时间。查询范围限于当前身份可访问的订单，未找到不能直接解释为订单不存在。"</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#79B8FF">  "parameters"</span><span style="color:#E1E4E8">: {</span></span>
+<span class="line"><span style="color:#79B8FF">    "type"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"object"</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#79B8FF">    "properties"</span><span style="color:#E1E4E8">: {</span></span>
+<span class="line"><span style="color:#79B8FF">      "order_id"</span><span style="color:#E1E4E8">: {</span></span>
+<span class="line"><span style="color:#79B8FF">        "type"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"string"</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#79B8FF">        "description"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"用户或先前工具提供的订单 ID，例如 ord_123；不是支付交易号，不要自行编造。"</span></span>
+<span class="line"><span style="color:#E1E4E8">      }</span></span>
+<span class="line"><span style="color:#E1E4E8">    },</span></span>
+<span class="line"><span style="color:#79B8FF">    "required"</span><span style="color:#E1E4E8">: [</span><span style="color:#9ECBFF">"order_id"</span><span style="color:#E1E4E8">],</span></span>
+<span class="line"><span style="color:#79B8FF">    "additionalProperties"</span><span style="color:#E1E4E8">: </span><span style="color:#79B8FF">false</span></span>
+<span class="line"><span style="color:#E1E4E8">  },</span></span>
+<span class="line"><span style="color:#79B8FF">  "strict"</span><span style="color:#E1E4E8">: </span><span style="color:#79B8FF">true</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>这里有两个 description：工具级解释“何时调用、会发生什么”，参数级解释“字段怎么填、值从哪里来”。类型正确不代表业务含义正确，所以两者都需要。</p>
+<p><code>strict</code> 约束参数结构，不能保证订单真实存在，也不会自动实现权限检查。服务端仍然要校验身份和业务条件。<a href="https://developers.openai.com/api/docs/guides/function-calling#strict-mode">OpenAI：Strict mode</a></p>
+<p>OpenAI 自己的两种 API 外形也有区别：<strong>Responses 的函数定义平铺；Chat Completions 则在外层 type: function 下，用 function 对象包住名称、描述、parameters 和 strict。</strong> 不要把两种外形混用。</p>
+<h2 id="3-anthropic-的工具格式input_schema-与-input_examples">3. Anthropic 的工具格式：input_schema 与 input_examples</h2>
+<p>同一个工具可以这样定义：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="json"><code><span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#79B8FF">  "name"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"get_order_status"</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#79B8FF">  "description"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"按订单 ID 查询当前状态，适用于用户询问指定订单的处理进度。仅支持精确 ID 查询，不支持按姓名搜索，也不会取消订单。成功返回订单状态和更新时间。查询范围限于当前身份可访问的订单，未找到不能直接解释为订单不存在。"</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#79B8FF">  "input_schema"</span><span style="color:#E1E4E8">: {</span></span>
+<span class="line"><span style="color:#79B8FF">    "type"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"object"</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#79B8FF">    "properties"</span><span style="color:#E1E4E8">: {</span></span>
+<span class="line"><span style="color:#79B8FF">      "order_id"</span><span style="color:#E1E4E8">: {</span></span>
+<span class="line"><span style="color:#79B8FF">        "type"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"string"</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#79B8FF">        "description"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"用户或先前工具提供的订单 ID；不是支付交易号，不要自行编造。"</span></span>
+<span class="line"><span style="color:#E1E4E8">      }</span></span>
+<span class="line"><span style="color:#E1E4E8">    },</span></span>
+<span class="line"><span style="color:#79B8FF">    "required"</span><span style="color:#E1E4E8">: [</span><span style="color:#9ECBFF">"order_id"</span><span style="color:#E1E4E8">],</span></span>
+<span class="line"><span style="color:#79B8FF">    "additionalProperties"</span><span style="color:#E1E4E8">: </span><span style="color:#79B8FF">false</span></span>
+<span class="line"><span style="color:#E1E4E8">  },</span></span>
+<span class="line"><span style="color:#79B8FF">  "input_examples"</span><span style="color:#E1E4E8">: [</span></span>
+<span class="line"><span style="color:#E1E4E8">    { </span><span style="color:#79B8FF">"order_id"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"ord_123"</span><span style="color:#E1E4E8"> }</span></span>
+<span class="line"><span style="color:#E1E4E8">  ]</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>重点有两个：输入结构叫 <code>input_schema</code>，不是 OpenAI 的 <code>parameters</code>；<strong>input_examples 与 input_schema 同级，不在里面</strong>。</p>
+<p>Anthropic 会将这些完整输入示例与 schema 一起提供给模型。示例本身必须符合 input_schema，不合法会返回 400 错误。示例校验不等于启用严格工具调用，也不会把后续输入限定为这些示例。<a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools#providing-tool-use-examples">Anthropic：Providing tool use examples</a></p>
+<h2 id="4-在-schema-里面加-examples有什么不同">4. 在 Schema 里面加 examples，有什么不同？</h2>
+<p>下面只是一个 JSON Schema 字段片段：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="json"><code><span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#79B8FF">  "type"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"string"</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#79B8FF">  "description"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"订单系统分配的订单 ID。"</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#79B8FF">  "examples"</span><span style="color:#E1E4E8">: [</span><span style="color:#9ECBFF">"ord_123"</span><span style="color:#E1E4E8">, </span><span style="color:#9ECBFF">"ord_456"</span><span style="color:#E1E4E8">]</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>它和 Anthropic 的 input_examples 是不同机制：</p>
+<table>
+<thead>
+<tr>
+<th>写法</th>
+<th>表达什么</th>
+<th>是否约束实际输入</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>description 中写“例如 ord_123”</td>
+<td>自然语言说明取值</td>
+<td>不约束</td>
+</tr>
+<tr>
+<td>schema 内的 examples</td>
+<td>标准示例注解；字段级展示字段，根级可展示完整对象</td>
+<td>不约束</td>
+</tr>
+<tr>
+<td>Anthropic 工具级 input_examples</td>
+<td>平台支持的完整输入示例，平台检查示例是否合法</td>
+<td>不把输入限制为示例</td>
+</tr>
+<tr>
+<td>schema 内的 enum</td>
+<td>允许值集合</td>
+<td>约束</td>
+</tr>
+</tbody>
+</table>
+<p>例如 <code>examples: ["ord_123", "ord_456"]</code> 表示“可以参考这样的值”；换成 <code>enum: ["ord_123", "ord_456"]</code> 则表示“只允许这两个值”。需要查询任意合法订单时，不能把示例误写成枚举。</p>
+<p>JSON Schema 的标准示例关键字是复数 <code>examples</code>。单数 <code>example</code> 可能来自其他规范或框架，不能默认等价。示例是注解，不参与输入合法性校验。<a href="https://json-schema.org/understanding-json-schema/reference/annotations">JSON Schema：Annotations</a></p>
+<p>还要区分标准和平台支持：<strong>JSON Schema 支持某个注解，不代表每家模型 API 都接受、保留或同样利用它。</strong> 尤其在严格模式下，需要核对目标 API 支持的 schema 子集，不能直接塞入任意关键字。</p>
+<h2 id="5-实际开发中怎么选">5. 实际开发中怎么选？</h2>
+<ol>
+<li><strong>简单参数先写清描述。</strong> 例如订单 ID 的来源及其与支付交易号的区别，必要时附一个值的例子。</li>
+<li><strong>复杂组合提供完整示例。</strong> 对嵌套对象、可选字段和格式敏感参数，Anthropic 可用 input_examples 展示字段组合。</li>
+<li><strong>迁移时适配平台格式。</strong> OpenAI 不要照搬 input_examples，可以在描述或提示中提供必要示例，再评测效果。</li>
+<li><strong>合法性要求用结构和代码表达。</strong> 类型、必填项、枚举和服务端校验不能由示例替代。</li>
+<li><strong>用真实任务检查效果。</strong> 观察工具是否选对、参数是否正确、结果是否解释准确，不按示例数量判断质量。</li>
+</ol>
+<p>对这个订单工具，至少检查三种请求：“查询 ord_123 的状态”应原样使用该 ID；“查张三的订单”不应编造 ID；“帮我取消订单”不能把查询成功报告成取消完成。</p>
+<p>Anthropic 的工具工程文章也建议通过任务评测和实际调用记录迭代工具，而不是只听模型自评。<a href="https://www.anthropic.com/engineering/writing-tools-for-agents">Anthropic：Writing tools for agents</a></p>
+<p>description 消除语义歧义，schema 表达输入约束，example 展示填写方式。它们共同帮助模型用对工具，真实的权限与业务正确性仍由服务端和验证结果保证。</p>
+</div></article></main><footer>© 2026 lm</footer></div></body></html>

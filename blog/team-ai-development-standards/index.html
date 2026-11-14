@@ -1,0 +1,110 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="用 AGENTS.md、Skill 和 CI/CD 规范团队 AI 开发，记录每次执行对话，并以每周复盘持续改进开发流程。"><meta name="theme-color" content="#fdfdfc"><title>团队 AI 开发规范怎么做：项目约束、执行流程与每周改进 | lm&#39;s Blog</title><link rel="icon" href="/avatar.svg" type="image/svg+xml"><link rel="canonical" href="https://lianminx.github.io/blog/team-ai-development-standards/"><link rel="alternate" type="application/rss+xml" title="lm's Blog" href="/rss.xml"><link rel="sitemap" href="/sitemap.xml"><meta property="og:type" content="website"><meta property="og:title" content="团队 AI 开发规范怎么做：项目约束、执行流程与每周改进 | lm's Blog"><meta property="og:description" content="用 AGENTS.md、Skill 和 CI/CD 规范团队 AI 开发，记录每次执行对话，并以每周复盘持续改进开发流程。"><meta property="og:url" content="https://lianminx.github.io/blog/team-ai-development-standards/"><link rel="stylesheet" href="/_astro/Layout.O7edXYKY.css"></head><body><a class="skip-link" href="#content">跳到正文</a><div class="page"><header class="article-header"><a class="back" href="/" aria-label="返回首页">←</a></header><main id="content"><article><h1 class="article-title">团队 AI 开发规范怎么做：项目约束、执行流程与每周改进</h1><p class="article-meta"><time datetime="2026-09-15T00:00:00.000Z">Sep 15, 2026</time> · 8 分钟阅读</p><div class="prose"><p>团队都开始用 AI 写代码后，每个人提供的上下文、执行步骤和完成标准可能都不一样。有人沿用现有架构，有人另起一套实现；有人验证业务边界，有人只看到构建通过就提交。</p>
+<p>我的做法是从三个层面建立规范：<strong>AGENTS.md 定义项目约束，Skill 规范执行流程，CI/CD 执行质量检查。</strong> 同时保留人的责任，记录每次执行对话，以一周为周期改进开发流程。</p>
+<p>下面以“给订单增加取消功能”为例，说明怎么做、为什么做。产品机制依据截至 2026 年 9 月 15 日核对的官方文档；具体流程、示例和每周复盘方法是本文的工程建议。</p>
+<h2 id="1-把项目规则写进仓库减少每个人重复提示">1. 把项目规则写进仓库，减少每个人重复提示</h2>
+<p>根目录的 <code>AGENTS.md</code> 写通用规范：项目结构、开发命令、修改边界和交付要求。关键能力目录再写局部规范，例如订单模块的状态转换、权限模块的租户隔离。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>project/</span></span>
+<span class="line"><span>├── AGENTS.md</span></span>
+<span class="line"><span>├── .agents/skills/develop-change/SKILL.md</span></span>
+<span class="line"><span>└── packages/</span></span>
+<span class="line"><span>    ├── orders/AGENTS.md</span></span>
+<span class="line"><span>    └── identity/AGENTS.md</span></span></code></pre>
+<p>订单模块可以明确写：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="markdown"><code><span class="line"><span style="color:#79B8FF;font-weight:bold"># 订单模块规范</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 订单状态转换通过现有订单服务处理，接口层不得直接修改状态。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 只有 pending 状态允许取消。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 已取消订单再次取消，不重复产生取消事件。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 已发货订单取消必须失败，且不得产生取消副作用。</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 修改取消逻辑时，验证正常取消、重复取消、已发货和并发请求。</span></span></code></pre>
+<p>为什么这样做？“注意幂等”“遵守业务规则”仍然需要 AI 猜测。具体的行为约束才能成为开发、测试和审查共同使用的依据。</p>
+<p>不是每个目录都需要规范文件。有独立职责和特殊约束时再增加；已有权威文档的规则可以引用，避免重复维护。</p>
+<p>还要确认 AI 工具确实加载了文件。Codex 启动时的项目指令发现路径从仓库根目录到当前工作目录，不能假定根目录启动就会读遍子目录。跨模块任务应明确要求修改前读取目标路径沿途的规范，并核对读取记录。<a href="https://learn.chatgpt.com/docs/agent-configuration/agents-md">OpenAI：AGENTS.md</a></p>
+<p>Claude Code 可以通过对应目录的 <code>CLAUDE.md</code> 写入 <code>@AGENTS.md</code> 导入共享规则。不同客户端要分别验证入口。<a href="https://code.claude.com/docs/en/memory">Anthropic：项目记忆</a></p>
+<h2 id="2-用-skill-固化开发步骤减少流程遗漏">2. 用 Skill 固化开发步骤，减少流程遗漏</h2>
+<p>将重复的开发过程组织成五步：</p>
+<ol>
+<li><strong>理解需求和验收条件</strong>：哪些行为应该成功，哪些应该失败。</li>
+<li><strong>阅读模块规范与现有实现</strong>：找到主责模块和已有入口。</li>
+<li><strong>最小范围修改</strong>：完成当前目标，不混入无关重构。</li>
+<li><strong>执行验证</strong>：运行真实检查，失败就如实报告。</li>
+<li><strong>提交变更说明</strong>：说明修改、验证证据和未验证事项。</li>
+</ol>
+<p>每一步都要有产物和完成条件。取消订单任务应在开始时列出状态边界，验证时核对返回值、持久化状态和事件副作用，交付时说明实际通过的场景。</p>
+<p>为什么用 Skill？为了换一个开发者、换一次会话后，仍然有统一的流程入口。模块规则留在 <code>AGENTS.md</code>，Skill 引用规则、组织执行，避免重复维护。</p>
+<p>OpenAI 支持显式调用 Skill，也支持根据描述选择 Skill。但“可被选择”不等于“一定执行”，需要从实际记录检查是否加载、是否完成关键步骤。<a href="https://learn.chatgpt.com/docs/build-skills">OpenAI：Build skills</a></p>
+<h2 id="3-用-ci-和分支保护设置合并门槛">3. 用 CI 和分支保护设置合并门槛</h2>
+<p>提交后自动执行格式检查、静态检查、类型检查、行为测试和构建，并将必需检查设为合并条件。关键模块由负责人审查。</p>
+<p>为什么？文字规范只能引导 AI，程序检查才能强制拦截已经编码的错误。例如“已发货订单不能取消”，应有对应测试并进入必需检查，而不只是写在 Markdown 里。</p>
+<p>流水线之外，还要配置主分支保护，要求通过 PR 合并、检查通过、审查批准，并确保新增提交得到复核。GitHub 支持必需状态检查、代码所有者审查和旧批准失效等机制。<a href="https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches">GitHub：受保护分支</a></p>
+<p>还应检查任务是否被跳过、保护是否可被绕过、结果对应的是否是当前待合并版本。CI 配置和测试本身也需要审查，避免通过删除检查获得绿灯。</p>
+<h2 id="4-用-cd-验证真正发布的结果">4. 用 CD 验证真正发布的结果</h2>
+<p>先在预发布环境验证关键业务路径，再发布同一个制品；发布后确认版本和运行状态，并保留回滚方案。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>明确提交 → 构建并记录制品标识 → 预发布验证</span></span>
+<span class="line"><span>→ 发布同一制品 → 核对线上版本与关键行为 → 异常时回滚</span></span></code></pre>
+<p>代码检查通过，不代表部署后的业务一定正确。配置、依赖服务和数据库状态都可能影响结果。取消订单上线时，既检查允许取消，也检查已发货拒绝取消及其副作用，不能只看进程存活。</p>
+<p>GitHub 的环境保护可设置发布审批与分支限制，具体可用性需结合仓库类型和套餐确认。<a href="https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments">GitHub：部署与环境</a></p>
+<h2 id="5-保留人的责任每次执行都记录对话">5. 保留人的责任，每次执行都记录对话</h2>
+<p>提交者要说明改了什么、验证了什么、还有什么没验证。AI 可以辅助审查，业务验收和合并责任仍由团队承担。</p>
+<p><strong>每次 AI 执行任务，都保存实际对话和可取得的工具执行记录，并关联任务、提交或 PR。</strong> 不能只保存最后一句“已完成”，否则复盘时无法定位过程中的偏差。</p>
+<p>建议记录以下内容：</p>
+<table>
+<thead>
+<tr>
+<th>内容</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>任务 ID、会话 ID、时间、执行者</td>
+<td>定位具体任务和对话</td>
+</tr>
+<tr>
+<td>用户需求、澄清及中途纠正</td>
+<td>判断目标是否理解准确</td>
+</tr>
+<tr>
+<td>模型、客户端、代码基线及规范版本</td>
+<td>区分环境和流程变化</td>
+</tr>
+<tr>
+<td>已读取的规范、Skill 与实际工具记录</td>
+<td>核对规则是否进入执行过程</td>
+</tr>
+<tr>
+<td>检查命令、失败输出、修复与重试</td>
+<td>还原验证和返工过程</td>
+</tr>
+<tr>
+<td>最终 diff、PR、CI 和验收结果</td>
+<td>把对话中的说法与实际结果对应</td>
+</tr>
+</tbody>
+</table>
+<p>一个任务跨多个会话时，用同一个任务 ID 串联；中断的任务也记录停止位置和未完成项。优先使用客户端或平台的实际会话导出；无法取得完整记录时标明缺口，不让 AI 事后补写成原始对话。</p>
+<p>这里记录的是可见对话、工具动作和结果，不要求模型提供隐藏推理。原始记录放在团队受控存储中，分享前处理凭证和敏感数据，PR 保留记录索引即可。</p>
+<p>为什么要记录对话？代码差异告诉我们“最终改成什么”，对话帮助定位“过程在哪里出了问题”：需求遗漏、规范没读、工具失败，还是把未验证误报为通过。</p>
+<h2 id="6-每周依据执行对话迭代一次开发流程">6. 每周依据执行对话，迭代一次开发流程</h2>
+<p>每周固定组织一次流程复盘，由流程负责人汇总，相关模块负责人参与。AI 可以整理候选问题，但修改什么规则，要由团队结合证据决定。</p>
+<ol>
+<li><strong>汇总本周记录。</strong> 优先逐项回看失败、返工、多次人工纠正和误报完成的任务，同时抽查成功任务。</li>
+<li><strong>定位失效步骤。</strong> 引用具体对话消息或工具事件，并与 diff、CI、验收结果对照，不只相信 AI 对原因的总结。</li>
+<li><strong>修改对应位置。</strong> 缺业务约束改模块规范；步骤遗漏改 Skill；参数理解错误改工具描述；检查未拦住补测试或 CI；环境问题修环境。</li>
+<li><strong>确定负责人和验收。</strong> 每周优先处理少量重复且影响较大的问题，记录修改内容、负责人、验证用例和回退方式。</li>
+<li><strong>回放并跟踪。</strong> 用原失败任务验证改进，再检查相邻场景；下周观察同类问题是否减少、有无新增副作用。</li>
+</ol>
+<p>例如，假设某次取消订单任务的记录显示：AI 未读取模块规范，直接参照其他接口实现；只运行构建，没有验证已发货状态；最后由人工指出已发货订单也能取消。</p>
+<p>周复盘就可以据此修改：Skill 开工步骤增加规范读取核对，验收步骤明确状态边界，CI 增加相应回归测试。如果模块规范本来已写清楚，就不重复增加同一条规则。</p>
+<p>每项改进保留一条简短记录：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="markdown"><code><span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 问题：取消功能遗漏已发货状态限制</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 证据：任务、对话事件、PR 与失败用例链接</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 原因：已确认的失效点；未确认部分单独标明</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 修改：具体规范、Skill 或检查文件</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 负责人：本次流程改进负责人</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 验证：原失败任务回放及相邻场景回归</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 下周观察：同类遗漏率、返工次数、检查耗时</span></span>
+<span class="line"><span style="color:#FFAB70">-</span><span style="color:#E1E4E8"> 后续：无效或产生副作用时调整或回退</span></span></code></pre>
+<p>观察效果时要有分母，例如“同类遗漏次数 / 本周相关任务数”。模型、项目难度和环境发生变化也要记录，避免将所有变化都归因于流程调整。</p>
+<p>这样，规范就能随实际开发持续改进：AGENTS.md 明确约束，Skill 组织执行，CI/CD 检查结果，对话记录提供过程证据，每周复盘决定下一步修正哪里。</p>
+</div></article></main><footer>© 2026 lm</footer></div></body></html>

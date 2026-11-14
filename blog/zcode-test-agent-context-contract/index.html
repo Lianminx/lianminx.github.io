@@ -1,0 +1,233 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="记录我如何把测试任务、环境上下文、可复用用例和证据合同交给独立 Agent，并用阻断、串行执行与结果核实减少错测和误报通过。"><meta name="theme-color" content="#fdfdfc"><title>我把 ZCode 变成了测试执行者：如何避免 AI 在错误上下文里乱测 | lm&#39;s Blog</title><link rel="icon" href="/avatar.svg" type="image/svg+xml"><link rel="canonical" href="https://lianminx.github.io/blog/zcode-test-agent-context-contract/"><link rel="alternate" type="application/rss+xml" title="lm's Blog" href="/rss.xml"><link rel="sitemap" href="/sitemap.xml"><meta property="og:type" content="website"><meta property="og:title" content="我把 ZCode 变成了测试执行者：如何避免 AI 在错误上下文里乱测 | lm's Blog"><meta property="og:description" content="记录我如何把测试任务、环境上下文、可复用用例和证据合同交给独立 Agent，并用阻断、串行执行与结果核实减少错测和误报通过。"><meta property="og:url" content="https://lianminx.github.io/blog/zcode-test-agent-context-contract/"><link rel="stylesheet" href="/_astro/Layout.O7edXYKY.css"></head><body><a class="skip-link" href="#content">跳到正文</a><div class="page"><header class="article-header"><a class="back" href="/" aria-label="返回首页">←</a></header><main id="content"><article><h1 class="article-title">我把 ZCode 变成了测试执行者：如何避免 AI 在错误上下文里乱测</h1><p class="article-meta"><time datetime="2026-09-11T00:00:00.000Z">Sep 11, 2026</time> · 12 分钟阅读</p><div class="prose"><p>最近我在开发流程里增加了一个独立的测试执行者：主 Agent 完成开发和部署后，由 ZCode 根据指定任务书，到对应环境执行测试并返回结构化结果。</p>
+<p>这件事乍看很简单：再启动一个 Agent，把测试用例交给它执行就行。但真正开始设计时，我发现最难的不是如何调用 ZCode，也不是怎样并发跑得更快，而是如何避免它在错误环境里，用错误入口执行一套已经过时的用例，最后还告诉我“测试通过”。</p>
+<p>因此，这次实现的核心并不是“自动跑测试”，而是：</p>
+<blockquote>
+<p>让测试 Agent 在执行前获得足够准确的上下文，在执行中守住职责边界，在执行后留下可复核的证据。</p>
+</blockquote>
+<p>这仍然服务于我整套 AI 开发流程的第一性原理：<strong>降低从需求到结果之间的不确定性，并控制错误被快速放大的风险。</strong></p>
+<h2 id="一我担心的不是-agent-不会测试而是它会自信地测错">一、我担心的不是 Agent 不会测试，而是它会自信地测错</h2>
+<p>一项线上能力可能同时存在几种测试入口：</p>
+<ul>
+<li>直接调用接口，验证底层服务行为。</li>
+<li>通过 MCP 调用，验证工具描述、输入契约和返回结果。</li>
+<li>通过 Worker 执行，验证 Runtime、Sandbox、Skill 和制品链路。</li>
+<li>从 Chat 发起自然语言任务，验证主 Agent 是否真的发现并使用了对应能力。</li>
+<li>登录机器查看服务状态和日志，辅助判断环境是否正确。</li>
+</ul>
+<p>这些入口不能互相替代。</p>
+<p>例如，直接调用 MCP 成功，只能证明这个调用入口在本次条件下可用。它不能证明主 Agent 在真实对话里会选择这个工具，也不能证明最终用户看到的结果符合需求。</p>
+<p>如果我只告诉测试 Agent“验证一下这个功能”，它就必须自己补全环境、版本、入口、账号、预期和测试数据。模型越擅长补全，结果反而越危险：它可能完成了一次逻辑自洽、但与本次需求无关的测试。</p>
+<p>所以我先把一个原则写进角色提示词：</p>
+<blockquote>
+<p>准确性优先于用例完成数量。缺少会改变判断的上下文时，不猜测、不换环境，直接阻断受影响的用例。</p>
+</blockquote>
+<h2 id="二先把职责切开测试执行者不负责部署和修复">二、先把职责切开：测试执行者不负责部署和修复</h2>
+<p>我原来已经有一个 ZCode 审查者，用来检查设计文档或代码实现。新的测试执行者没有复用这个角色。</p>
+<p>两者虽然都通过 ACP 调用本机 ZCode，但职责完全不同：</p>
+<table>
+<thead>
+<tr>
+<th>对比项</th>
+<th>Review Agent</th>
+<th>Test Agent</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>目标</td>
+<td>判断方案或实现是否存在问题</td>
+<td>在指定环境执行已定义的测试</td>
+</tr>
+<tr>
+<td>主要输入</td>
+<td>需求、基线代码、方案或实现</td>
+<td>测试任务书、环境入口和用例</td>
+</tr>
+<tr>
+<td>主要输出</td>
+<td>审查结论和待核实问题</td>
+<td>逐项状态、实际结果和证据</td>
+</tr>
+<tr>
+<td>是否实施修复</td>
+<td>否</td>
+<td>否</td>
+</tr>
+<tr>
+<td>会话策略</td>
+<td>每次审查新建独立会话</td>
+<td>每轮测试新建独立会话</td>
+</tr>
+<tr>
+<td>记录位置</td>
+<td>审查记录</td>
+<td>测试运行记录</td>
+</tr>
+</tbody>
+</table>
+<p>新的测试执行者只在我明确要求测试已部署环境时启用。部署、重启、配置修改和业务代码修改仍由主 Agent 或既有发布流程负责。</p>
+<p>如果测试发现问题，它应该停在“事实和证据”这里，而不是顺手改代码、降低预期，再重新测试到通过。否则执行者同时控制实现、验收标准和最终结论，很难判断它证明的是需求成立，还是证明了自己能够让结果看起来成立。</p>
+<h2 id="三codex-交付的不是一句话而是一份测试任务书">三、Codex 交付的不是一句话，而是一份测试任务书</h2>
+<p>测试任务通过一份 UTF-8 Markdown 文件交给 ZCode。文件不追求复杂，重点是把会改变结果的动态信息说清楚：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>需求版本与用户可观察结果</span></span>
+<span class="line"><span>本轮测试要支持什么决定</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>目标环境、节点或入口</span></span>
+<span class="line"><span>预期部署版本及确认依据</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>必须读取的现有上下文入口</span></span>
+<span class="line"><span>选定的用例及执行顺序</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>允许创建和清理的数据</span></span>
+<span class="line"><span>允许的辅助调查</span></span>
+<span class="line"><span>禁止动作和停止条件</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>每项必须保存的证据</span></span>
+<span class="line"><span>超时和重试规则</span></span></code></pre>
+<p>这里有一个容易被忽略的字段：<strong>本轮测试要支持什么决定。</strong></p>
+<p>同一项检查可能用于发布准入、定位故障、确认接口契约，或者判断主 Agent 是否会主动调用工具。目的不同，所需证据也不同。如果这项决定没有说清，测试很容易收集一堆信息，却无法回答当前真正的问题。</p>
+<p>任务书也是授权边界。没有写入的部署、重启、环境切换和业务修改，不会因为测试 Agent“认为有必要”就自动获得授权。</p>
+<h2 id="四稳定上下文只提供索引不在任务书里复制一份">四、稳定上下文只提供索引，不在任务书里复制一份</h2>
+<p>环境、服务关系、登录方式和凭据入口相对稳定，但仍会变化。如果 Codex 每次凭记忆转述，容易漏掉节点或混淆 Dev 与 Preview；如果把完整资料复制到每份任务书，它们又会很快分叉。</p>
+<p>我现在把上下文分成两层：</p>
+<table>
+<thead>
+<tr>
+<th>层次</th>
+<th>保存什么</th>
+<th>谁负责提供</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>稳定上下文</td>
+<td>环境拓扑、服务职责、登录入口、凭据读取方式、常用取证入口</td>
+<td>已维护的 Runbook 和项目资料</td>
+</tr>
+<tr>
+<td>本轮上下文</td>
+<td>需求版本、目标环境、部署版本、测试数据、选定用例和停止条件</td>
+<td>Codex 生成的任务书</td>
+</tr>
+</tbody>
+</table>
+<p>任务书只指向当前已经维护好的权威资料，并指出本轮需要读取的章节。测试 Agent 按需读取，不遍历全部历史，也不建立另一份环境说明。</p>
+<p>凭据尤其不能随着上下文一起复制。任务书只写凭据 Profile 或安全读取入口，密码、Token 和私钥正文不进入任务书、结果文件或聊天总结。</p>
+<p>这解决的是两个相反的问题：既避免上下文不足，也避免把所有资料塞进一次测试，让过期信息和无关规则干扰判断。</p>
+<h2 id="五把最近真正测过的内容沉淀成可复用用例">五、把最近真正测过的内容沉淀成可复用用例</h2>
+<p>只有提示词，没有稳定用例，测试 Agent 每次仍会临场设计测试。于是我把最近实际使用过的检查按能力分组：</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>主要证明什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>环境与版本</td>
+<td>目标节点、服务版本和实际接线路由正确</td>
+</tr>
+<tr>
+<td>MCP</td>
+<td>工具快照、输入契约、查询边界和分页语义正确</td>
+</tr>
+<tr>
+<td>Worker 与 Sandbox</td>
+<td>工具执行、Skill 挂载、生命周期、共享目录和制品正确</td>
+</tr>
+<tr>
+<td>文件交付</td>
+<td>当前与历史版本下载、租户隔离和归档行为正确</td>
+</tr>
+<tr>
+<td>主 Agent 链路</td>
+<td>Agent 会发现能力、派发 Worker，并把结果用于最终回答</td>
+</tr>
+</tbody>
+</table>
+<p>每个用例只保存测试意图、前置条件、步骤、通过条件、阻断条件和证据要求。环境地址、固定会话 ID、历史文件引用和凭据不写进用例正文。</p>
+<p>我还给用例增加了四种维护状态：</p>
+<ul>
+<li><code>verified</code>：已有真实证据，前置条件、步骤和断言可以重新准备。</li>
+<li><code>candidate</code>：有测试价值，但入口或数据仍要在本轮任务书中补齐。</li>
+<li><code>revise</code>：契约或环境已经变化，修订前不能执行。</li>
+<li><code>retired</code>：对应行为已经不再适用。</li>
+</ul>
+<p>“上周通过”不能自动变成“今天仍然通过”。历史结果只能证明当时的环境、版本和范围。每轮执行前，测试 Agent 仍要重新核对契约、目标版本和测试入口。</p>
+<h2 id="六为什么我最后选择串行而不是并发">六、为什么我最后选择串行，而不是并发</h2>
+<p>我最初想到的是让多个测试 Agent 并发执行。理论上这会更快，但当前阶段我更关心结论能否归因。</p>
+<p>环境测试常常共享服务状态、会话、测试租户、Sandbox 和文件。如果多个 Agent 同时运行，可能互相覆盖数据、触发限流，或者把另一轮产生的日志当成本轮证据。失败后也更难判断是产品问题、用例问题，还是并发干扰。</p>
+<p>因此，当前实现有两层串行约束：</p>
+<ol>
+<li>同一机器同时只允许一轮 ZCode 测试运行。</li>
+<li>一轮内部严格按任务书顺序，一次执行一个用例。</li>
+</ol>
+<p>独立用例仍要使用独立业务会话和测试数据，前一个用例不能污染后一个。</p>
+<p>这不意味着未来永远不并发。等用例的数据隔离、环境容量和证据归属都能稳定证明后，再考虑并行独立用例。现在为了追求速度引入无法解释的偶发失败，并不是真正的提效。</p>
+<h2 id="七结果必须写成机器可检查的合同">七、结果必须写成机器可检查的合同</h2>
+<p>聊天里的一句“测试完成”信息太少，也很难在后续复核。我要求每轮测试保存两个文件：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>request.md   本轮任务书快照</span></span>
+<span class="line"><span>result.json  本轮正式结果</span></span></code></pre>
+<p><code>result.json</code> 中每个用例至少包含：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="json"><code><span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#79B8FF">  "id"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"用例编号"</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#79B8FF">  "status"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"passed | failed | blocked | incomplete | flaky"</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#79B8FF">  "actual"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"实际观察和断言结论"</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#79B8FF">  "evidence"</span><span style="color:#E1E4E8">: [</span><span style="color:#9ECBFF">"可复核证据引用"</span><span style="color:#E1E4E8">],</span></span>
+<span class="line"><span style="color:#79B8FF">  "limitations"</span><span style="color:#E1E4E8">: [</span><span style="color:#9ECBFF">"未覆盖项或结论边界"</span><span style="color:#E1E4E8">],</span></span>
+<span class="line"><span style="color:#79B8FF">  "cleanup"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"not_required | completed | failed | not_run"</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>这些状态不能互相折叠：</p>
+<ul>
+<li><code>passed</code>：断言在当前环境和版本下有证据支持。</li>
+<li><code>failed</code>：实际结果违反明确预期。</li>
+<li><code>blocked</code>：环境、版本、入口、凭据、数据或成功条件不足，无法作出产品结论。</li>
+<li><code>incomplete</code>：测试被中断，或者仍有步骤没有执行。</li>
+<li><code>flaky</code>：首次失败，在明确允许的重试后才通过。</li>
+</ul>
+<p>只有所有选定用例都通过，整体结果才能是 <code>passed</code>。命令退出码为零、接口返回非空、工具出现在列表里，或者 Agent 自己说“验证成功”，都不能单独作为业务通过证据。</p>
+<p>调用脚本还会检查 JSON 结构、运行标识、状态、重复用例、证据和清理字段。这能拦住格式错误和明显自相矛盾，但不能证明 Agent 提供的证据是真的。关键通过项和全部失败、阻断项仍由主 Agent 核实。</p>
+<h2 id="八真正重要的是什么时候不执行">八、真正重要的是“什么时候不执行”</h2>
+<p>为了验证阻断逻辑，我专门构造了一份缺少目标环境、节点、版本和入口的任务书。</p>
+<p>结果记录显示，它没有执行任何测试操作，也没有自行选择一个环境。它把环境状态和对应测试用例标记为 <code>blocked</code>，说明缺少哪些信息，以及补齐后才能重新运行。</p>
+<p>这次结果没有证明任何业务能力通过，但它证明了一个更基础的机制：<strong>上下文不足时，测试 Agent 能够停止，而不是为了完成任务制造结论。</strong></p>
+<p>另一次本地回放包含一个已知通过断言和一个已知失败断言。执行者正确地区分了两者，整体结果为 <code>failed</code>。这项测试故意不追求绿色结果，因为测试系统的价值首先来自它能可靠报告失败。</p>
+<p>截至本文发布时，这两次回放只验证了 ACP 调用、独立会话、串行执行、分类、阻断和结果合同。它们没有证明 Dev 或 Preview 的 Agent Platform（AP）、MCP、Worker 和主 Agent 全链路已经通过。真实环境验收仍要基于对应版本另行执行。</p>
+<h2 id="九现在的实际调用链">九、现在的实际调用链</h2>
+<p>我沿用了此前接通的 ACP 链路，详细过程写在<a href="/blog/codex-zcode-acp-review/">《让 Codex 通过 ACP 调用 ZCode》</a>中。测试执行链可以简化为：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>我：确认需求、部署状态和测试目标</span></span>
+<span class="line"><span>  ↓</span></span>
+<span class="line"><span>Codex：生成任务书，指定上下文和用例</span></span>
+<span class="line"><span>  ↓</span></span>
+<span class="line"><span>PowerShell runner：预检、加串行锁、创建记录</span></span>
+<span class="line"><span>  ↓</span></span>
+<span class="line"><span>acpx：创建新的 ACP 会话并发送任务文件</span></span>
+<span class="line"><span>  ↓</span></span>
+<span class="line"><span>zcode-acp → 本机 ZCode：调查并执行测试</span></span>
+<span class="line"><span>  ↓</span></span>
+<span class="line"><span>result.json：逐项状态、证据、限制和清理结果</span></span>
+<span class="line"><span>  ↓</span></span>
+<span class="line"><span>Codex：核实关键结论并向我汇报</span></span></code></pre>
+<p>Review 和 Test 共用已经固定版本的本地 ACP 依赖，但使用不同的 Agent 名称、提示词、入口脚本、会话和记录目录。复用底层连接可以减少维护成本，隔离角色则避免审查上下文和测试授权相互污染。</p>
+<h2 id="十这套机制解决了什么又没有解决什么">十、这套机制解决了什么，又没有解决什么</h2>
+<p>目前我认为它解决了四个具体问题：</p>
+<ol>
+<li><strong>任务交付不再依赖 Codex 的临场转述。</strong> 环境、版本、入口、用例和停止条件有明确载体。</li>
+<li><strong>测试层次不再混在一起。</strong> 直接接口、MCP、Worker 和主 Agent 链路分别成立，不向上外推。</li>
+<li><strong>缺少上下文时能够明确阻断。</strong> 不再用猜测补齐关键前提。</li>
+<li><strong>测试结果可以复核和迭代。</strong> 任务快照、状态、证据与限制能进入后续分析。</li>
+</ol>
+<p>它也没有解决所有问题。</p>
+<p>提示词中的“不要修改”不是强制只读沙箱。测试环境仍需通过账号权限、工作目录和允许动作控制真实副作用。测试用例也会过时，需要根据契约和环境变化维护状态。最重要的是，第二个 Agent 不会因为角色名称叫“测试执行者”就变得绝对准确。</p>
+<p>我能做的是把准确性拆成可以检查的条件：上下文是否齐全、环境是否匹配、用例是否可用、证据是否支持结论、限制是否被保留。无法证明的部分就继续标为未知，而不是用“自动化测试已通过”盖过去。</p>
+<h2 id="十一下一步不是增加更多-agent">十一、下一步不是增加更多 Agent</h2>
+<p>接下来我会先选择一组范围小、结果明确的 Preview 用例，验证任务书能否把真实环境、部署版本和测试入口准确交给 ZCode。重点观察三件事：</p>
+<ul>
+<li>它有没有读取正确的上下文，而不是凭历史猜测。</li>
+<li>它收集的证据能否被主 Agent 快速核实。</li>
+<li>失败来自产品、环境、用例还是测试执行本身。</li>
+</ul>
+<p>只有真实记录证明串行测试稳定、数据隔离清楚、结果可归因，我才会考虑并发或更复杂的调度。</p>
+<p>对我来说，测试 Agent 的价值不是替人点更多按钮，而是把“我们为什么相信这次结果”说得更清楚。自动化越强，阻断条件、证据边界和人的最终判断就越重要。</p>
+</div></article></main><footer>© 2026 lm</footer></div></body></html>

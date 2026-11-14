@@ -1,0 +1,189 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="一次个人 Cloudflare 实践复盘：用到了哪些工具，部署了哪些开源项目，如何验证并封装成 Codex Skill，以及免费额度、网络和维护上的真实限制。"><meta name="theme-color" content="#fdfdfc"><title>用 Cloudflare 搭一套个人工具箱：博客、网盘、短链、页面分享与 AI 快捷操作 | lm&#39;s Blog</title><link rel="icon" href="/avatar.svg" type="image/svg+xml"><link rel="canonical" href="https://lianminx.github.io/blog/cloudflare-personal-toolbox/"><link rel="alternate" type="application/rss+xml" title="lm's Blog" href="/rss.xml"><link rel="sitemap" href="/sitemap.xml"><meta property="og:type" content="website"><meta property="og:title" content="用 Cloudflare 搭一套个人工具箱：博客、网盘、短链、页面分享与 AI 快捷操作 | lm's Blog"><meta property="og:description" content="一次个人 Cloudflare 实践复盘：用到了哪些工具，部署了哪些开源项目，如何验证并封装成 Codex Skill，以及免费额度、网络和维护上的真实限制。"><meta property="og:url" content="https://lianminx.github.io/blog/cloudflare-personal-toolbox/"><link rel="stylesheet" href="/_astro/Layout.O7edXYKY.css"></head><body><a class="skip-link" href="#content">跳到正文</a><div class="page"><header class="article-header"><a class="back" href="/" aria-label="返回首页">←</a></header><main id="content"><article><h1 class="article-title">用 Cloudflare 搭一套个人工具箱：博客、网盘、短链、页面分享与 AI 快捷操作</h1><p class="article-meta"><time datetime="2026-09-17T00:00:00.000Z">Sep 17, 2026</time> · 12 分钟阅读</p><div class="prose"><p>起点其实很简单：我想有一个自己的博客。后来又发现，平时让 AI 生成的 HTML 说明页需要分享，开发时需要临时接收 Webhook，文件需要存放，长链接也需要一个好记的入口。</p>
+<p>这些需求单独看都不大，但如果每次都从找项目、配环境、查接口开始，使用工具的成本就超过了工具本身的价值。</p>
+<p>今天我把前面搭建的博客，以及这一轮补齐的 Cloudflare 服务和快捷操作整理了一遍。目标是：<strong>尽量利用免费额度，让常用能力运行在云端，再让 Codex 用固定脚本完成日常操作。</strong> 不买域名，不为这些轻量服务常驻一台本地服务器，也不先升级 Workers 付费套餐。</p>
+<p>下面记录截至 2026 年 9 月 17 日的实际落地情况。接口验证通过的能力、尚未验证的功能和已经停用的项目，会分别说明。</p>
+<h2 id="一整个过程需要哪些东西">一、整个过程需要哪些东西</h2>
+<table>
+<thead>
+<tr>
+<th>工具或服务</th>
+<th>用来做什么</th>
+<th>是否一直在本地运行</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cloudflare 账号</td>
+<td>管理 Pages、Workers 和应用需要的存储资源</td>
+<td>否</td>
+</tr>
+<tr>
+<td>GitHub、Git</td>
+<td>保存项目源码、配置和变更历史</td>
+<td>否，修改时使用</td>
+</tr>
+<tr>
+<td>Node.js、npm</td>
+<td>安装依赖、构建前端和运行部署工具</td>
+<td>否，构建时使用</td>
+</tr>
+<tr>
+<td>Wrangler</td>
+<td>登录 Cloudflare、部署代码、配置 Secret 和资源绑定</td>
+<td>否，管理时使用</td>
+</tr>
+<tr>
+<td>Codex 与 Cloudflare 插件</td>
+<td>辅助理解项目、查资料、处理配置和调用可用工具</td>
+<td>按需使用</td>
+</tr>
+<tr>
+<td>PowerShell 7、Python</td>
+<td>执行固定的发布、短链、回调和文件操作脚本</td>
+<td>按需使用</td>
+</tr>
+<tr>
+<td>浏览器</td>
+<td>完成授权、使用服务界面、检查展示效果</td>
+<td>按需使用</td>
+</tr>
+<tr>
+<td>Clash Verge / Mihomo</td>
+<td>验证个人代理试用节点</td>
+<td>使用代理时运行</td>
+</tr>
+</tbody>
+</table>
+<p>Cloudflare 插件、MCP、Wrangler 和 Skill 各有职责。MCP 提供工具访问入口，Wrangler 负责命令行部署与管理，Skill 则告诉 Agent 什么时候调用哪段脚本、怎么判断完成。安装插件不代表所有服务已经配置好，能打开页面也不代表已经接入 Agent。</p>
+<p>这一轮具体发布主要使用 Wrangler；遇到特定上传问题时使用了 Cloudflare API。日常使用则优先调用应用自己的 API，不需要每次重新登录管理账号。</p>
+<p>项目来源之一是 <a href="https://github.com/theoephraim/awesome-cloudflare-selfhosted">awesome-cloudflare-selfhosted</a>。我把它当作候选项目目录，再检查每个项目的实际依赖、部署方式和维护状态。</p>
+<h2 id="二cloudflare-的几个产品分别承担什么">二、Cloudflare 的几个产品分别承担什么</h2>
+<table>
+<thead>
+<tr>
+<th>产品</th>
+<th>在这套工具箱里的角色</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pages</td>
+<td>托管博客和部分应用入口；带服务端逻辑的项目也会使用 Functions</td>
+</tr>
+<tr>
+<td>Workers</td>
+<td>执行短链接、页面发布、回调处理等服务端逻辑</td>
+</tr>
+<tr>
+<td>D1</td>
+<td>保存应用的结构化数据，例如短链接记录和页面元数据</td>
+</tr>
+<tr>
+<td>KV</td>
+<td>保存键值数据，例如临时会话和应用配置</td>
+</tr>
+<tr>
+<td>R2</td>
+<td>保存文件、页面内容等对象数据</td>
+</tr>
+<tr>
+<td>Durable Objects</td>
+<td>协调实时连接或有状态任务，例如 Webhook WebSocket 会话</td>
+</tr>
+<tr>
+<td>Secrets</td>
+<td>保存应用需要的服务端凭据，避免把密码写进源码</td>
+</tr>
+</tbody>
+</table>
+<p>不是每个项目都要开通全部产品。博客是静态站点，不需要数据库；网盘需要对象存储；实时回调则需要保持连接和会话状态。</p>
+<p>这些应用部署后运行在 Cloudflare。本机主要负责开发、构建和发布，关掉本地终端不会让博客或网盘停止服务。临时 Webhook 监听是一个例外：接收服务在云端，但查看回调的客户端连接需要保持在线。</p>
+<h2 id="三最后做了哪些项目">三、最后做了哪些项目</h2>
+<h3 id="1-个人博客长期内容的入口">1. 个人博客：长期内容的入口</h3>
+<p>博客使用 Astro 和 Markdown，部署到 Cloudflare Pages。现在具备文章页、首页介绍、搜索、RSS 和 sitemap，可以持续记录开发实践。</p>
+<p>它的更新链路比较简单：写 Markdown，构建静态页面，提交 GitHub，再发布 Pages。<strong>当前 GitHub push 与部署是两个独立动作</strong>，没有配置推送后自动上线。</p>
+<p>我暂时使用 Cloudflare 提供的 <code>pages.dev</code> 地址。它是平台子域名，可以先把内容写起来，但不是自己持有的独立域名。</p>
+<h3 id="2-uptimeflare知道博客有没有正常工作">2. UptimeFlare：知道博客有没有正常工作</h3>
+<p>UptimeFlare 提供服务状态和响应延迟展示。当前配置每分钟检查博客，并通过状态页查看结果。</p>
+<p>实际使用了 Pages、定时 Worker、D1 和 SQLite Durable Object。已经验证状态接口能够读到真实监控数据。</p>
+<p>当前只监控博客，没有把所有工具都加入，也没有配置邮件或其他外部告警。状态页能看到异常，不等于异常发生时一定会主动通知我。</p>
+<h3 id="3-sink给长链接一个稳定入口">3. Sink：给长链接一个稳定入口</h3>
+<p>Sink 负责创建和管理短链接。例如，给博客设置一个固定别名；以后遇到很长的页面地址，也可以生成便于发送的入口。</p>
+<p>这次使用 Workers、D1 和 KV，验证了管理鉴权、链接创建和实际跳转。管理后台需要令牌，不能匿名创建链接。</p>
+<p>我没有为了“功能完整”把所有选项都打开。统计图表、AI、图片上传、R2 备份和 Analytics Engine 都没有配置。当前主要使用创建、管理、跳转和 JSON 导出能力。</p>
+<h3 id="4-typedwebhook临时接住第三方回调">4. TypedWebhook：临时接住第三方回调</h3>
+<p>开发回调接口时，经常需要知道：请求是否真的发出了？用了什么方法？请求体具体是什么？TypedWebhook 提供一个临时地址，用来观察这些请求。</p>
+<p>这次验证的是一条完整链路：创建会话，建立 WebSocket 监听，发送测试 POST，再检查收到的内容与发送内容是否一致。</p>
+<p>一个容易忽略的细节是：<strong>拿到 URL 还不够，监听连接必须先建立。</strong> 关闭页面或监听进程后，不能继续把这个地址当成可用的回调入口。</p>
+<p>上游会话约 30 分钟，自己的快捷脚本默认监听 10 分钟，最多 25 分钟。它适合临时联调，不是生产消息队列，也不是长期保存所有业务回调的系统。上游的类型生成功能没有做浏览器验收，因此不把它算作本次已验证能力。</p>
+<h3 id="5-davflare一个私有网盘">5. Davflare：一个私有网盘</h3>
+<p>Davflare 提供文件管理和 WebDAV 能力，底层使用私有 R2 桶，应用部署在 Pages。</p>
+<p>已经验证的操作包括上传、下载读回、WebDAV 文件操作，以及匿名请求被拒绝。后面还补了 API Key 方式，让 Codex 不必每次打开网页登录，就能执行文件操作。</p>
+<p>私有云盘的快捷脚本支持列目录、建目录、上传和下载。上传后会重新下载内容，用 SHA-256 检查是否一致。同名同内容可以跳过，同名不同内容则停止，避免覆盖已有文件。</p>
+<p>当前脚本将单文件上限设为 95 MiB，更大文件走网页分块上传；脚本不提供删除和公开分享。独立图床、站点域名和远程 MCP 接入也没有一并完成。</p>
+<h3 id="6-open-artifacts把本地-html-变成可访问的页面">6. Open Artifacts：把本地 HTML 变成可访问的页面</h3>
+<p>这是我觉得最直接有用的一项。AI 生成了一个自包含 HTML，原来只能本地打开；现在可以发布到云端，得到一个别人能访问的链接。</p>
+<p>服务使用 Workers、D1 和 R2。创建页面需要发布令牌，每个页面的更新与删除使用各自的写入令牌。</p>
+<p>这次实际发布了已有 HTML，并验证页面返回 HTTP 200、原文读回与源文件一致。后续同一源文件更新会复用原页面 ID，内容没变就直接返回原链接，不反复创建新页面。</p>
+<p>它也有明确边界：HTML 里引用的本地附件不会自动上传。如果页面链接到同目录的 Markdown 或图片，需要单独处理这些依赖。未加密页面持有链接即可读取，所以发布前要确认内容适合公开。密码加密是上游能力，本轮没有专门验证。</p>
+<h3 id="7-vless一个单独验证的个人代理试用项目">7. VLESS：一个单独验证的个人代理试用项目</h3>
+<p>最后还试用了 <a href="https://github.com/yonggekkk/Cloudflare-vless-trojan">Cloudflare-vless-trojan</a>，选择 VLESS + WebSocket + TLS，部署在独立 Pages 项目中。本地运行兼容客户端，不需要 Docker。</p>
+<p>这部分最值得记录的是检查过程中发现的差异：项目首页的介绍比较宽泛，但目录里的说明已经写明暂停维护、当前仅 Pages 文件可用。混淆脚本又与现有 Wrangler 编译检查发生冲突，最终保留原模块，通过 Pages API 上传。</p>
+<p>节点使用独立 UUID 和随机访问路径，关闭了公开配置页。实际验证包括正确凭据转发成功、错误 UUID 无法取得转发响应，以及通过客户端访问 HTTPS 目标成功。切换后也检查了客户端真正选中的节点，没有只看“配置已导入”。</p>
+<p>这是一次可用性试验，不是长期稳定性承诺。上游混淆代码没有完成全面审计，部分访问依赖第三方 ProxyIP，出口也不保证固定。我不会在文章中公开节点地址、UUID、路径或客户端配置。</p>
+<h2 id="四把操作做成-skill才真正方便日常使用">四、把操作做成 Skill，才真正方便日常使用</h2>
+<p>部署完成后，我遇到的下一个问题是慢：分享一个 HTML，还要重新查服务地址、找凭据、研究接口、拼请求。已经搭好的服务，不能每次使用都像第一次部署。</p>
+<p>于是把常用动作整理成两个 Skill：</p>
+<table>
+<thead>
+<tr>
+<th>Skill</th>
+<th>我可以直接怎么说</th>
+<th>脚本负责什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cloudflare-quick-tools</code></td>
+<td>“把这个 HTML 分享出去”</td>
+<td>创建或更新页面，保留原链接，验证原文与访问结果</td>
+</tr>
+<tr>
+<td><code>cloudflare-quick-tools</code></td>
+<td>“给这个网址生成短链，别名 demo”</td>
+<td>创建短链、检查别名冲突、验证跳转目标</td>
+</tr>
+<tr>
+<td><code>cloudflare-quick-tools</code></td>
+<td>“开一个 Webhook 接收回调”</td>
+<td>建立监听后返回 URL，记录事件，到期关闭</td>
+</tr>
+<tr>
+<td><code>davflare-drive</code></td>
+<td>“把这几个文件存到我的云盘”</td>
+<td>上传文件、处理重名、下载读回并校验内容</td>
+</tr>
+</tbody>
+</table>
+<p>Skill 负责识别任务、选择流程、说明限制。确定性的接口请求、内容比较和凭据读取交给脚本。Agent 不必在每次对话里重新生成一套上传代码。</p>
+<p>还有两条小规则很有用：写请求遇到网络错误后，先核对远端是否已经成功，不盲目重试；短链接别名已经指向其他目标时，不自动覆盖。</p>
+<p>凭据独立于 Skill 和 Git 保存。私有网盘的本机 API Key 配置使用 Windows DPAPI 加密，同一 Windows 用户才能解密。项目文档记录凭据的管理方式，不保存凭据正文。</p>
+<p>最后，把服务总览放在项目文档里，并从 <code>AGENTS.md</code> 加索引。后续 Agent 先复用现有服务，避免因为找不到记录又部署一遍。</p>
+<h2 id="五这次踩到的几个实际问题">五、这次踩到的几个实际问题</h2>
+<p><strong>浏览器授权成功，不代表本机登录已经完成。</strong> Wrangler 的浏览器登录需要把授权结果交回本地进程。我们曾遇到 localhost 回调无法访问，后续改用设备授权，并以终端登录状态作为完成依据。</p>
+<p><strong>不同操作需要的权限不同。</strong> 原来能够部署博客的授权，不一定覆盖新增 Worker、KV 和 D1。遇到权限不足，要对照具体操作补授权，而不是反复执行同一条命令。</p>
+<p><strong>服务在云端，本地构建仍然需要磁盘和依赖。</strong> 这次安装时遇到本地磁盘不足，部分项目换到另一块盘作为维护副本。解决后明确记录哪个目录才是当前源码，避免下次从旧副本发布。</p>
+<p><strong>直连失败不代表服务没有部署成功。</strong> 同一个地址在不同网络和请求环境下可能表现不同。我们遇到过域名连接中断，也遇到请求客户端标识影响访问结果。排查时分别检查部署状态、网络入口、鉴权和接口响应，不能把所有 403 或超时都归到同一个原因。</p>
+<p><strong>HTTP 200 只是部分证据。</strong> 上传要读回文件，短链要看跳转目标，Webhook 要确认收到请求体，代理要实际转发目标请求。接口验证也不能替代浏览器显示效果、长期稳定性和其他网络环境的验证。</p>
+<h2 id="六免费能做到哪一步">六、免费能做到哪一步</h2>
+<p>本次没有购买域名，也没有升级 Workers 付费套餐。但“以免费额度为目标”和“已经设置硬性零费用上限”是两回事。</p>
+<p>R2 需要单独开通，Standard 存储目前有每月 10 GB-month 存储、100 万次 A 类操作、1000 万次 B 类操作的免费额度，超出可能计费。多个网盘和页面分享应用会共同使用账号的存储及请求额度；R2 的免费额度不适用于 Infrequent Access 存储。<a href="https://developers.cloudflare.com/r2/pricing/">R2 官方价格</a></p>
+<p>Workers Free 当前有每天 10 万次请求额度，服务端逻辑不能因为挂在 Pages 下就被视为无限免费。多个个人服务需要一起看用量，而不是给每个项目单独想象一份无限资源。<a href="https://developers.cloudflare.com/workers/platform/pricing/">Workers 官方价格</a></p>
+<p>我们也看过 Cloudflare Containers，想把本地 Docker 负载搬过去。但它需要 Workers Paid，最低每月 5 美元起，容器资源超过包含额度还会额外计费，所以这次没有启用。<a href="https://developers.cloudflare.com/containers/platform/pricing/">Containers 官方价格</a></p>
+<p>这套工具箱没有替代所有服务器需求。持续重负载、完整 Docker 开发环境、大容量存储，都要另算成本和维护方式。</p>
+<h2 id="七哪些没有继续做">七、哪些没有继续做</h2>
+<p>MindPocket 曾进入这轮尝试，后来发现暂时没有明确使用需求，就关闭了公开入口。源码和存储资源保留，没有把“停用”写成“数据已删除”；保留的数据仍然占额度。</p>
+<p>个人域名邮箱也暂缓了。我们讨论过 Cloudflare 收信转发、邮件发送服务和邮箱客户端的组合，但没有购买自己的域名，也没有把它部署成可用邮箱。它不属于这次已经完成的能力。</p>
+<p>现在保留的工具已经能覆盖一条日常路径：写文章发布到博客，监控博客状态；生成 HTML 后分享；把需要保留的文件存进私有云盘；给链接起别名；开发时临时接收回调。常用操作再通过 Skill 调用。</p>
+<p>接下来比继续增加项目更重要的，是实际使用这些服务，观察用量，验证备份与恢复，并移除长期用不到的部分。工具箱的价值，要看下一次需要它时能否直接完成事情。</p>
+</div></article></main><footer>© 2026 lm</footer></div></body></html>

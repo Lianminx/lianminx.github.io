@@ -1,0 +1,86 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="用提示词契约、手写 Schema 示例和五层程序兜底，解决大模型 JSON 输出不稳定的工程问题。"><meta name="theme-color" content="#fdfdfc"><title>让大模型稳定输出 JSON：提示词、Schema、程序兜底的三层防线 | lm&#39;s Blog</title><link rel="icon" href="/avatar.svg" type="image/svg+xml"><link rel="canonical" href="https://lianminx.github.io/blog/llm-stable-json-output/"><link rel="alternate" type="application/rss+xml" title="lm's Blog" href="/rss.xml"><link rel="sitemap" href="/sitemap.xml"><meta property="og:type" content="website"><meta property="og:title" content="让大模型稳定输出 JSON：提示词、Schema、程序兜底的三层防线 | lm's Blog"><meta property="og:description" content="用提示词契约、手写 Schema 示例和五层程序兜底，解决大模型 JSON 输出不稳定的工程问题。"><meta property="og:url" content="https://lianminx.github.io/blog/llm-stable-json-output/"><link rel="stylesheet" href="/_astro/Layout.O7edXYKY.css"></head><body><a class="skip-link" href="#content">跳到正文</a><div class="page"><header class="article-header"><a class="back" href="/" aria-label="返回首页">←</a></header><main id="content"><article><h1 class="article-title">让大模型稳定输出 JSON：提示词、Schema、程序兜底的三层防线</h1><p class="article-meta"><time datetime="2026-11-05T00:00:00.000Z">Nov 5, 2026</time> · 8 分钟阅读</p><div class="prose"><p>假设你的服务在用大模型做结构化抽取：从工单抽字段、从合同抽条款、把用户输入转成 API 参数。上线第一周你会发现，大部分请求返回干净的 JSON，但总有百分之几解析直接失败——有的包着 markdown 代码块围栏，有的开头多一句「好的，以下是提取结果」，有的截断在字符串中间。解析一挂，下游全挂。</p>
+<p>这不怪模型。大模型的文本生成本质上没有任何「必须输出合法 JSON」的硬约束，它只是在按概率延续文本。想让输出稳定不能靠运气，要靠三层防线：<strong>提示词从源头约束，Schema 用示例定格式，程序在终态兜底</strong>。三层各管一段，缺一层，那百分之几的事故就会落到你头上。</p>
+<h2 id="第一层提示词把契约写死">第一层：提示词——把契约写死</h2>
+<h3 id="正面说清要什么再集中列出禁止项">正面说清要什么，再集中列出禁止项</h3>
+<p>写格式要求时，很多人喜欢堆一堆「不要这样、不要那样」。否定指令弱是有原理的：模型要执行「不要 X」，得先在内部把 X 表征出来，等于把错误样例又强化了一遍。更好的写法是两段式——</p>
+<p>先正面定义契约：<strong>「只输出一个合法的 JSON 对象，以 { 开头、} 结尾」</strong>；再集中列出禁止项，用强措辞：<strong>「禁止：markdown 代码块、任何解释性文字、任何前后缀语句」</strong>。用「禁止」不只是语气更硬，它是把规则定位成硬约束，而不是建议。</p>
+<p>另一个常被忽略的技巧是<strong>近因偏好</strong>：模型对离生成位置越近的指令权重越高。所以同一条格式契约，在 system 开头定义一次，在 user 消息末尾再强调一次，违规率会明显下降。</p>
+<h3 id="缺省规则写死不给模型发挥空间">缺省规则写死，不给模型发挥空间</h3>
+<p>抽取类任务最常见的脏输出不是格式错，而是模型「好心补全」：原文里没有的字段它编一个，列表为空它硬凑一条。必须在提示词里写死缺省规则：</p>
+<ul>
+<li>字段在原文中找不到 → 填 null</li>
+<li>列表为空 → 填 []</li>
+<li>不确定 → 填 null；<strong>禁止猜测、禁止编造、禁止用「可能是」的值填充</strong></li>
+</ul>
+<p>这三行看似朴素，却是后面「值溯源校验」的前提——模型只有被明确告知不猜不编，下游才有资格要求它的值可信。</p>
+<h3 id="格式规则放-system不进-user">格式规则放 system，不进 user</h3>
+<p>三个理由：</p>
+<ol>
+<li><strong>职责分离</strong>。system 是稳定契约层，user 只装数据。格式要求和数据混在一起，模型容易把用户内容里的字面格式当成指令，顺带也缩小了 prompt 注入的风险面。</li>
+<li><strong>缓存命中</strong>。system 不变，prompt cache 前缀就能命中，又便宜又快。这条在讲重试时还会变现。</li>
+<li><strong>稳定性</strong>。按请求把格式规则动态拼进 user，是很多脏输出事故的直接根源——规则本身在变，模型行为当然不稳。</li>
+</ol>
+<h3 id="temperature-设-0">temperature 设 0</h3>
+<p>这条值得单独讲原理。大模型每生成一个 token，本质是输出一个覆盖全词表的概率分布，temperature 是采样前对分布做缩放的系数：<strong>T 趋近 0 时分布被拉尖，永远选概率最高的 token（贪心解码）；T 等于 1 时按原始分布抽样；T 大于 1 时分布被拉平，冷门 token 被放大</strong>。</p>
+<p>为什么结构化输出要设 0：抽取不是创作，你要的是「最可能的下一个 token」，不是「多样的」。T 大于 0 时，模型在本该输出 } 的位置可能抽样出一段补充解释，在本该填 null 的字段抽样出一个编造值——低概率分支正是脏输出的主要来源。T 为 0 还有个工程红利：<strong>失败可复现</strong>，同一个输入挂了重跑还挂，排查不靠玄学。</p>
+<p>两个脚注：其一，T 为 0 并非绝对确定，浮点误差和调度批次会带来微小抖动，但「接近确定」对工程已经够用；其二，别一刀切——需要创造力的生成任务设 0 会写得呆，这条规则只针对结构化输出场景。</p>
+<h2 id="第二层schema模型是模仿者不是阅读理解者">第二层：Schema——模型是模仿者，不是阅读理解者</h2>
+<p>给模型一段抽象的类型描述（「name 是字符串，date 是日期」），不如给它一个填好的实例。对大模型来说，<strong>示例就是最强的格式约束</strong>。</p>
+<p>具体做法：</p>
+<ul>
+<li><strong>骨架 + 完整实例</strong>。手写目标 JSON 的结构并填一份完整示例值。注意是「完整」——别偷懒写「其余字段省略」，模型会真的模仿出省略号。</li>
+<li><strong>字段顺序即输出顺序</strong>。模型会照抄示例里的 key 顺序，把最关心的字段放前面。</li>
+<li><strong>类型写死</strong>。日期写明 ISO 8601 并给出示例值；数字不加引号；枚举字段把全部合法值列出来，一个不漏。</li>
+<li><strong>示例必须与规则自洽</strong>。这是最容易翻车的一条：规则说「文本没有的填 null」，示例里就必须真实出现一个 null 字段和一个空列表 []。模型对示例的模仿权重远高于对文字规则的理解——两者矛盾时，它学示例、丢规则。</li>
+<li><strong>进阶技巧</strong>：在正确示例后面附一个错误输出示例，一句话点明它错在哪。对比例对围栏、解释文字这类格式错误很有效。注意顺序：正确示例在前，坏例只是对照。</li>
+</ul>
+<h2 id="第三层程序兜底五层漏斗">第三层：程序兜底——五层漏斗</h2>
+<p>提示词做到位能消灭绝大多数脏输出，但「绝大多数」不等于「全部」。只要大模型还在按概率生成文本，就一定有残余失败率——程序兜底不是可选项，是成本最低的保险。</p>
+<p>兜底之前先分清失败类型，不同类型走不同的处理层：</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>典型表现</th>
+<th>能否程序处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A 格式污染</td>
+<td>合法 JSON 外包着代码块围栏、前后有说明文字</td>
+<td>能，字符串清洗</td>
+</tr>
+<tr>
+<td>B 语法残缺</td>
+<td>截断、尾逗号、单引号、未转义换行、True/None、中文标点</td>
+<td>能，修复解析</td>
+</tr>
+<tr>
+<td>C 结构错误</td>
+<td>缺字段、数字带引号、枚举外取值、多出字段</td>
+<td>能，校验＋重试</td>
+</tr>
+<tr>
+<td>D 语义幻觉</td>
+<td>字段存在，值是编的</td>
+<td>难，只能溯源校验</td>
+</tr>
+</tbody>
+</table>
+<p>然后按成本从低到高走五层漏斗，<strong>永远先走便宜的</strong>：</p>
+<ol>
+<li><strong>清洗</strong>。剥掉代码块围栏，截取第一个 { 到最后一个 }（数组同理），再走严格解析。这一层零成本，能吃掉大部分失败。</li>
+<li><strong>修复解析</strong>。严格解析失败才启用宽容解析（社区有现成的 JSON 修复库，处理尾逗号、单引号、Python 风格的 True/None、截断的半截 JSON）。铁律：<strong>修复完必须重新过一遍完整校验，不许「修完就信」</strong>。</li>
+<li><strong>Schema 校验</strong>。解析成功不等于能用。用类型声明框架（Python 系如 Pydantic，TS 系如 Zod）做类型检查、枚举检查、必填检查，并<strong>收集全部错误而不是遇到第一个就抛</strong>——因为这些错误要喂给下一层。截断要单独识别：返回结果带「因长度截断」标志时，别浪费重试，直接加大输出预算或简化 Schema。</li>
+<li><strong>带错误反馈的重试</strong>。把「你的上次输出 ＋ 具体报错」追加回对话重调。两个关键：<strong>报错必须具体</strong>（「date 字段是字符串『3月』，需要 ISO 8601 日期」），笼统的「格式错了」会让重试成功率骤降；最多重试两次，temperature 保持 0——上下文变了，不需要升温。system 没变，prompt cache 照常命中，重试的额外成本比想象中低。</li>
+<li><strong>终态</strong>。fail closed：返回结构化错误，<strong>绝不把修复后的「可能错」数据伪装成正常数据往下游走</strong>；原始脏输出落日志，各层命中率进监控。</li>
+</ol>
+<h3 id="三条贯穿原则">三条贯穿原则</h3>
+<p><strong>兜底是安全网，不是垃圾场。</strong> 每一层兜底命中都要留痕迹：第 1 层命中率持续偏高，说明提示词该改了；第 4 层频繁触发，说明 Schema 示例有问题。遥测数据反哺提示词迭代，这才是闭环——兜底的意义不只是撑住，更是告诉你源头哪里没做好。</p>
+<p><strong>D 类幻觉兜不住，只能校验。</strong> 如果字段值必须来自原文（ID、金额、日期、专有名词），做<strong>值溯源校验</strong>：输出的值必须在原文中出现过，否则按校验失败走重试。这是「不猜不编」失灵时唯一的程序化手段，也是全文性价比最高的一个技巧。</p>
+<p><strong>分级兜底，避免两个极端。</strong> 一个极端是只做了「解析失败就放弃」，中间几层全缺；另一个极端是修复后不校验直接用，把垃圾数据洗白着送进下游。五层各自独立、可以单独验证，按失败类型各就各位。</p>
+<h2 id="结尾三层是一个闭环">结尾：三层是一个闭环</h2>
+<p>回看这三层：提示词消灭大部分格式偏差，Schema 把剩下的大头按住，程序兜底接住尾部并告诉你源头哪里该改。它们不是三个并列技巧，而是一条从源头到终态的流水线，遥测数据让这条线转起来。</p>
+<p>最后留一个进阶钩子：主流模型 API 现在大多提供原生结构化输出——JSON mode、基于 Schema 的约束解码（在解码层直接禁止非法 token）、函数调用。这些机制把「格式正确」从提示词约定变成解码层硬约束，是三层防线之后的下一步。它们的适用边界、代价和坑，留到系列的下一篇。</p>
+</div></article></main><footer>© 2026 lm</footer></div></body></html>
