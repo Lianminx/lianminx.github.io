@@ -1,5 +1,5 @@
 <!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="从两个开源项目的本地评估，到只读 MCP、ngrok 免费固定域名、macOS 登录后自启动。记录真实验证、踩坑和安全边界，并开源可复用的 Agent Skill。"><meta name="theme-color" content="#fdfdfc"><title>通过 MCP 为 ChatGPT 接入本地代码 | liam</title><link rel="icon" href="/favicon.svg?v=3" type="image/svg+xml"><link rel="canonical" href="https://lianminx.github.io/blog/chatgpt-local-code-mcp-codexpro/"><link rel="alternate" type="application/rss+xml" title="liam" href="/rss.xml"><link rel="sitemap" href="/sitemap.xml"><meta property="og:type" content="website"><meta property="og:title" content="通过 MCP 为 ChatGPT 接入本地代码 | liam"><meta property="og:description" content="从两个开源项目的本地评估，到只读 MCP、ngrok 免费固定域名、macOS 登录后自启动。记录真实验证、踩坑和安全边界，并开源可复用的 Agent Skill。"><meta property="og:url" content="https://lianminx.github.io/blog/chatgpt-local-code-mcp-codexpro/"><link rel="stylesheet" href="/_astro/Layout.O7edXYKY.css"></head><body><a class="skip-link" href="#content">跳到正文</a><div class="page"><header class="article-header"><a class="back" href="/" aria-label="返回首页">←</a></header><main id="content"><article><h1 class="article-title">通过 MCP 为 ChatGPT 接入本地代码</h1><p class="article-meta"><time datetime="2026-11-01T00:00:00.000Z">Nov 1, 2026</time> · 15 分钟阅读</p><div class="prose"><p>我经常在 ChatGPT 网页版里讨论代码，但一旦问题涉及多个目录、调用链和项目约定，复制粘贴文件就很麻烦。我想要的不是让它直接改代码，而是：<strong>讨论到某个项目时，让它按需读取我电脑上允许访问的代码。</strong></p>
-<p>这次我先比较了两个开源项目，最终用 CodexPro 提供本地 MCP 工具，再用 ngrok 的固定 HTTPS 地址接入 ChatGPT。整个过程整理成了 <a href="https://github.com/Lianminx/chatgpt-local-code-skill">chatgpt-local-code-skill</a>，里面有 Skill、部署辅助脚本、固定依赖快照和验证用例。</p>
+<p>这次我先比较了两个开源项目，最终用 CodexPro 提供本地 MCP 工具，再用 ngrok 的固定 HTTPS 地址接入 ChatGPT。整个过程整理成了 <a href="https://github.com/Lianminx/chatgpt-local-bridge">chatgpt-local-bridge</a>，里面有 Skill、部署辅助脚本、固定依赖快照和验证用例。</p>
 <p>先说边界：这不是完全离线方案，不是让 ChatGPT 自动拥有整台电脑，也不是绕过账号权限。代码被工具读取后，会经过隧道服务并进入 ChatGPT 的处理链路。下面记录的是 <strong>2026 年 11 月 1 日，在 macOS Apple silicon 上的一次实践</strong>；服务条款、免费额度、界面和依赖安全状态都可能变化。</p>
 <h2 id="一先分清楚我想接的是工具不是模型代理">一、先分清楚：我想接的是工具，不是模型代理</h2>
 <p>一开始看到两个项目：</p>
@@ -132,7 +132,7 @@
 <p>我实际做过停止旧进程、重新交给 LaunchAgent 启动，再通过同一个 ngrok 地址执行读取验证。<strong>没有为了这次验证真正重启整台电脑。</strong> 因此可以说“服务重启后地址和访问正常”，不能写成“已经完成所有开机恢复场景验收”。</p>
 <p>停止和永久禁用也要分清：停止本次登录会话，下次登录仍会启动；永久禁用需要卸载并移除对应 LaunchAgent。开源辅助脚本提供了两个不同命令，不让“停止了”变成一个错误的长期安全预期。</p>
 <h2 id="八把过程收敛成-skill而不是一篇只能手抄的教程">八、把过程收敛成 Skill，而不是一篇只能手抄的教程</h2>
-<p>这次开源的是 <a href="https://github.com/Lianminx/chatgpt-local-code-skill">chatgpt-local-code-skill</a>，首版重点是让另一个 Agent 在相同目标下少走弯路，而不是宣称一键兼容所有系统。</p>
+<p>这次开源的是 <a href="https://github.com/Lianminx/chatgpt-local-bridge">chatgpt-local-bridge</a>，首版重点是让另一个 Agent 在相同目标下少走弯路，而不是宣称一键兼容所有系统。</p>
 <p>仓库包含：</p>
 <ul>
 <li><code>SKILL.md</code>：什么时候用、需要确认哪些目录和公开范围、什么时候停止。</li>
@@ -144,8 +144,8 @@
 <p>它不会读取浏览器 Cookie，不会接管 Codex 模型配置，也不会替用户创建插件或购买服务。</p>
 <h3 id="使用示例">使用示例</h3>
 <p>把 <code>skills/chatgpt-local-code</code> 安装到支持该格式的 Agent 的 Skill 目录，或者直接在克隆后的仓库里运行辅助脚本：</p>
-<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sh"><code><span class="line"><span style="color:#B392F0">git</span><span style="color:#9ECBFF"> clone</span><span style="color:#9ECBFF"> https://github.com/Lianminx/chatgpt-local-code-skill.git</span></span>
-<span class="line"><span style="color:#79B8FF">cd</span><span style="color:#9ECBFF"> chatgpt-local-code-skill/skills/chatgpt-local-code</span></span>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sh"><code><span class="line"><span style="color:#B392F0">git</span><span style="color:#9ECBFF"> clone</span><span style="color:#9ECBFF"> https://github.com/Lianminx/chatgpt-local-bridge.git</span></span>
+<span class="line"><span style="color:#79B8FF">cd</span><span style="color:#9ECBFF"> chatgpt-local-bridge/skills/chatgpt-local-code</span></span>
 <span class="line"></span>
 <span class="line"><span style="color:#B392F0">python3</span><span style="color:#9ECBFF"> scripts/bridge.py</span><span style="color:#9ECBFF"> install</span></span>
 <span class="line"><span style="color:#B392F0">python3</span><span style="color:#9ECBFF"> scripts/bridge.py</span><span style="color:#9ECBFF"> configure</span><span style="color:#79B8FF"> \</span></span>
@@ -218,7 +218,7 @@
 <ul>
 <li><a href="https://github.com/rebel0789/codexpro">CodexPro</a>，本次读取工具的上游项目。</li>
 <li><a href="https://github.com/miuuyy/codex-chatgpt-web">codex-chatgpt-web</a>，本次比较但未采用的浏览器桥接路线。</li>
-<li><a href="https://github.com/Lianminx/chatgpt-local-code-skill">开源 Skill 与辅助脚本</a>。</li>
+<li><a href="https://github.com/Lianminx/chatgpt-local-bridge">开源 Skill 与辅助脚本</a>。</li>
 <li><a href="https://developers.openai.com/api/docs/guides/custom-mcp-server">OpenAI：添加自定义 MCP 服务器</a>。</li>
 <li><a href="https://developers.openai.com/api/docs/guides/secure-mcp-tunnels">OpenAI：Secure MCP Tunnels</a>。</li>
 <li><a href="https://ngrok.com/docs/pricing-limits/free-plan-limits/">ngrok 免费方案限制</a>。</li>

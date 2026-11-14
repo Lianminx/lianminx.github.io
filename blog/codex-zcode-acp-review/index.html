@@ -1,5 +1,5 @@
 <!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="ACP 不是 MCP，acpx 也不是必选项。记录一次 Windows 上的 ZCode 接入实践，并开源支持复审和短记录的 Skill。"><meta name="theme-color" content="#fdfdfc"><title>通过 ACP 接入 ZCode 代码审查 | liam</title><link rel="icon" href="/favicon.svg?v=3" type="image/svg+xml"><link rel="canonical" href="https://lianminx.github.io/blog/codex-zcode-acp-review/"><link rel="alternate" type="application/rss+xml" title="liam" href="/rss.xml"><link rel="sitemap" href="/sitemap.xml"><meta property="og:type" content="website"><meta property="og:title" content="通过 ACP 接入 ZCode 代码审查 | liam"><meta property="og:description" content="ACP 不是 MCP，acpx 也不是必选项。记录一次 Windows 上的 ZCode 接入实践，并开源支持复审和短记录的 Skill。"><meta property="og:url" content="https://lianminx.github.io/blog/codex-zcode-acp-review/"><link rel="stylesheet" href="/_astro/Layout.O7edXYKY.css"></head><body><a class="skip-link" href="#content">跳到正文</a><div class="page"><header class="article-header"><a class="back" href="/" aria-label="返回首页">←</a></header><main id="content"><article><h1 class="article-title">通过 ACP 接入 ZCode 代码审查</h1><p class="article-meta"><time datetime="2026-09-11T00:00:00.000Z">Sep 11, 2026</time> · 7 分钟阅读</p><div class="prose"><p>我原来让 Codex 负责开发，再通过另一个 Agent 做审查。最近想把审查者换成本机的 ZCode，于是从一个很直接的问题开始：能不能让 Codex 调用它？</p>
-<p>这次最终接通的是 <code>Codex → acpx → zcode-acp → ZCode</code>。我把调用脚本、审查提示词和留档规则整理成了开源的 <a href="https://github.com/Lianminx/zcode-acp-review">zcode-acp-review Skill</a>。首版支持 Windows 和 PowerShell 7。</p>
+<p>这次最终接通的是 <code>Codex → acpx → zcode-acp → ZCode</code>。我把调用脚本、审查提示词和留档规则整理成了开源的 <a href="https://github.com/Lianminx/agent-acp-bridge">Agent ACP Bridge Skill</a>。首版支持 Windows 和 PowerShell 7。</p>
 <p>比起“多接了一个模型”，我更关心三个问题：它到底怎么接通，第二个 Agent 应该审什么，以及每次调用后留下什么，才能帮助下一次改进。</p>
 <h2 id="acp-是协议不是把-zcode-包成-mcp-工具">ACP 是协议，不是把 ZCode 包成 MCP 工具</h2>
 <p><a href="https://agentclientprotocol.com/get-started/architecture">Agent Client Protocol 的架构</a>区分客户端和 Agent。客户端发起会话与请求，Agent 返回消息，也可能请求文件或终端等能力。常见本地连接通过标准输入输出传递协议消息。</p>
@@ -76,7 +76,7 @@
 <p><code>completed</code> 只表示调用正常返回，不代表审查通过。强制结束可能留下 <code>running</code>；记录目录不可写时应在发送任务前停止。短记录也可能包含本地路径或敏感摘录，基础脱敏不能替代公开前的检查。</p>
 <p>这样下一次才能讨论：哪些提示帮助发现了问题，哪些产生了误报，是否缺了某项上下文。记录的价值来自核实与处理，而不是数量。</p>
 <h2 id="开源了什么别人怎么用">开源了什么，别人怎么用？</h2>
-<p><a href="https://github.com/Lianminx/zcode-acp-review">zcode-acp-review</a> 提供三个部分：</p>
+<p><a href="https://github.com/Lianminx/agent-acp-bridge">Agent ACP Bridge</a> 提供三个部分：</p>
 <ul>
 <li>Skill：告诉宿主什么时候调用，以及如何处理反馈。</li>
 <li>PowerShell 脚本：安装固定依赖、发起审查、复用会话和留档。</li>
