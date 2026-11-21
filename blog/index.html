@@ -1,41 +1,51 @@
-<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="后端、AI、以及自己的思考"><meta name="theme-color" content="#fdfdfc"><title>文章 — liam</title><link rel="icon" href="/favicon.svg?v=3" type="image/svg+xml"><link rel="canonical" href="https://lianminx.github.io/blog/"><link rel="alternate" type="application/rss+xml" title="liam" href="/rss.xml"><link rel="sitemap" href="/sitemap.xml"><meta property="og:type" content="website"><meta property="og:title" content="文章 — liam"><meta property="og:description" content="后端、AI、以及自己的思考"><meta property="og:url" content="https://lianminx.github.io/blog/"><link rel="stylesheet" href="/_astro/Layout.O7edXYKY.css"></head><body><a class="skip-link" href="#content">跳到正文</a><div class="page"><main id="content"><section class="intro-heading"><a href="/">← liam</a><h1>文章</h1><p class="subtitle">后端、AI、以及自己的思考</p><nav class="social" aria-label="个人链接"><a href="https://github.com/Lianminx"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.86c-2.78.6-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.95 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02A9.6 9.6 0 0 1 12 6.82c.85 0 1.71.11 2.51.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.85-2.34 4.7-4.57 4.95.36.31.68.92.68 1.85v2.75c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"></path></svg>GitHub</a><a href="/rss.xml"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="6" cy="18" r="2"></circle><path d="M4 4v3c7.2 0 13 5.8 13 13h3C20 11.2 12.8 4 4 4Zm0 6v3c3.9 0 7 3.1 7 7h3c0-5.5-4.5-10-10-10Z"></path></svg>RSS</a></nav><button id="search-open" class="search-trigger" aria-label="搜索文章" title="搜索文章（Ctrl / ⌘ K）" hidden><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.8" cy="10.8" r="7.3"></circle><path d="m16.2 16.2 4.8 4.8"></path></svg></button><dialog id="search-dialog" aria-labelledby="search-label"><div class="search-head"><label id="search-label" for="search-input">搜索文章</label><form method="dialog"><button class="close-search" aria-label="关闭搜索">Esc</button></form></div><input id="search-input" type="search" placeholder="输入标题或正文关键词…" autocomplete="off"><p id="search-status" role="status" aria-live="polite"></p><ul id="search-results"><li data-search="模型对话接口与 agent 本质 模型对话接口是结构化上下文。chat 每次自己带历史，responses 可以用请求 id 关联，也可以关掉服务端存储、在本地管理。agent 围绕目标多轮调用模型，任务是否结束由 runtime 决定。 我一开始以为，模型厂商的 `/chat` 只返回回答，`/responses` 会附带思考过程。要说清楚的不是这个差别。
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="后端、AI、以及自己的思考"><meta name="theme-color" content="#fdfdfc"><title>文章 — liam</title><link rel="icon" href="/favicon.svg?v=3" type="image/svg+xml"><link rel="canonical" href="https://lianminx.github.io/blog/"><link rel="alternate" type="application/rss+xml" title="liam" href="/rss.xml"><link rel="sitemap" href="/sitemap.xml"><meta property="og:type" content="website"><meta property="og:title" content="文章 — liam"><meta property="og:description" content="后端、AI、以及自己的思考"><meta property="og:url" content="https://lianminx.github.io/blog/"><link rel="stylesheet" href="/_astro/Layout.O7edXYKY.css"></head><body><a class="skip-link" href="#content">跳到正文</a><div class="page"><main id="content"><section class="intro-heading"><a href="/">← liam</a><h1>文章</h1><p class="subtitle">后端、AI、以及自己的思考</p><nav class="social" aria-label="个人链接"><a href="https://github.com/Lianminx"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.86c-2.78.6-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.95 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02A9.6 9.6 0 0 1 12 6.82c.85 0 1.71.11 2.51.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.85-2.34 4.7-4.57 4.95.36.31.68.92.68 1.85v2.75c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"></path></svg>GitHub</a><a href="/rss.xml"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="6" cy="18" r="2"></circle><path d="M4 4v3c7.2 0 13 5.8 13 13h3C20 11.2 12.8 4 4 4Zm0 6v3c3.9 0 7 3.1 7 7h3c0-5.5-4.5-10-10-10Z"></path></svg>RSS</a></nav><button id="search-open" class="search-trigger" aria-label="搜索文章" title="搜索文章（Ctrl / ⌘ K）" hidden><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.8" cy="10.8" r="7.3"></circle><path d="m16.2 16.2 4.8 4.8"></path></svg></button><dialog id="search-dialog" aria-labelledby="search-label"><div class="search-head"><label id="search-label" for="search-input">搜索文章</label><form method="dialog"><button class="close-search" aria-label="关闭搜索">Esc</button></form></div><input id="search-input" type="search" placeholder="输入标题或正文关键词…" autocomplete="off"><p id="search-status" role="status" aria-live="polite"></p><ul id="search-results"><li data-search="模型对话接口与 agent 本质 对话接口是按角色组织的上下文。chat 每次自带历史，responses 可以用请求 id 关联，也可以关掉服务端存储。任务是否结束由 agent runtime 判断。 模型对话接口是用结构化上下文和模型交互。agent 是围绕一个目标，反复组织这份上下文、调用模型，再根据输出决定下一步，直到任务完成。接口状态只说明这一次调用。任务有没有结束，由 agent runtime 判断。
 
-模型对话接口本质上是通过结构化上下文与模型交互。传统 chat 接口以 message 为基本单位，用 role 区分消息来源：
+我一开始把 `/chat` 和 `/responses` 看成返回内容的差别：chat 只给回答，responses 再附上思考过程。这个差别不是重点。两边都能多轮对话，也都能调用工具。要分开的是三件事：一条记录里有哪些角色，上下文放在调用方还是服务端，一条记录能装下什么。
 
-1. system / developer：定义模型的行为规范、提示词和约束。工具和 skill 的描述也在这里。
-2. user：用户输入和任务要求。
-3. assistant：模型的回答，以及工具调用请求。
-4. tool：工具执行结果，作为后续推理的输入。
+## 一条记录里有哪些角色
 
-chat completions 以消息列表为核心。responses 用更丰富的 item，可以表达文本、工具调用、工具结果、推理数据和多模态内容。两边都能做多轮对话和工具调用。responses 的优势是协议更统一，能表达的内容也更多。
+传统 chat 以 message 为基本单位，用 role 区分消息从哪来。
 
-上下文放在哪，两边不一样。
+| role | 放什么 |
+| --- | --- |
+| system / developer | 行为规范、提示词、约束。工具和 skill 的描述也在这里 |
+| user | 用户输入和任务要求 |
+| assistant | 模型的回答，以及它发出的工具调用请求 |
+| tool | 工具执行完的结果，供下一轮推理使用 |
 
-chat 的输入输出就是上面这种 message。每次请求都带上前面几轮，上下文在本地管理。
+工具调用和工具返回不要放在同一个角色里。调用请求是模型给出的，记在 assistant。执行结果是工具给出的，单独记为 tool，再作为后续输入送回模型。
 
-responses 可以把整个会话用请求 id 连起来。之后每次只带必要字段，服务端按 id 关联前面几轮。它也支持和 chat 一样，不把上下文放在服务端，由本地自己管理。我现在用的就是 responses，并且关掉了服务端存储。
+## 上下文放在哪
 
-agent 就是围绕一个目标，持续组织上下文，多轮调用模型，根据模型输出决定下一步，直到任务完成。
+chat 的输入输出就是上面这种 message。每一轮请求都带上前面几轮，上下文由调用方在本地管理。
 
-任务是否结束，不由单次接口状态决定。两类接口都有响应状态，说明的是这一次调用。
+responses 可以把同一次会话用请求 id 串起来。之后每次只提交必要字段，服务端按这个 id 找回前面几轮。它也支持和 chat 一样，不在服务端保存，由本地自己带上上下文。我现在用的是 responses，并且关掉了服务端存储。
 
-chat 返回 `finish_reason`，其中：
+## 一条记录能装下什么
+
+chat completions 以消息列表为核心。responses 用 item。同一套结构里可以放文本、工具调用、工具结果、推理数据和多模态内容。responses 更统一，一条记录能表达的内容也更多。多返回一段思考过程，不是这两套接口的分界。
+
+## 任务什么时候算结束
+
+agent 不靠一次调用做完。它先有目标，然后持续组织上下文，多轮调用模型。每一轮看模型输出，决定下一步是调用工具，还是停。
+
+chat 用 `finish_reason` 说明这一次生成：
 
 - `tool_calls`：模型还要调用工具
-- `stop`：这次生成结束
+- `stop`：这次生成停了
 
-responses 返回 `status`：
+responses 用 `status` 说明这一次 response：
 
 | status | 含义 |
 | --- | --- |
-| completed | 本次 response 生成完成 |
+| completed | 本次生成完成 |
 | in_progress | 正在生成 |
-| incomplete | 响应未完整完成 |
+| incomplete | 响应没有完整完成 |
 | failed | 执行失败 |
 | cancelled | 已取消 |
 | queued | 等待处理 |
 
-实际决定任务是否结束的是 agent runtime。正常结束，就是没有后续工具调用。异常结束有很多情况，要分开看，不能把一次接口状态当成任务结果。"><a href="/blog/model-chat-and-agent/"><strong>模型对话接口与 Agent 本质</strong><span>模型对话接口是结构化上下文。Chat 每次自己带历史，Responses 可以用请求 ID 关联，也可以关掉服务端存储、在本地管理。Agent 围绕目标多轮调用模型，任务是否结束由 runtime 决定。</span></a></li><li data-search="skill 的上下文精简与脚本化 触发只看 description。正文只写模型不知道的步骤。结果必须一致的操作放进脚本，多种做法都成立的判断留成文字。写完用校验脚本收口，再拿到真实任务上改。 一份给人看很完整的 skill，模型经常用不好。来历、版本记录和「专业、全面、注意平衡」都在占上下文，却没有告诉它这次该不该被选中，也没有告诉它哪一步不能写错。
+这些状态回答的是这次调用怎样了。正常的任务结束，是 runtime 看到没有后续工具调用。异常结束有多种情况，要分开判断，不能拿一次 `finish_reason` 或 `status` 当成任务结果。"><a href="/blog/model-chat-and-agent/"><strong>模型对话接口与 Agent 本质</strong><span>对话接口是按角色组织的上下文。Chat 每次自带历史，Responses 可以用请求 ID 关联，也可以关掉服务端存储。任务是否结束由 Agent runtime 判断。</span></a></li><li data-search="skill 的上下文精简与脚本化 触发只看 description。正文只写模型不知道的步骤。结果必须一致的操作放进脚本，多种做法都成立的判断留成文字。写完用校验脚本收口，再拿到真实任务上改。 一份给人看很完整的 skill，模型经常用不好。来历、版本记录和「专业、全面、注意平衡」都在占上下文，却没有告诉它这次该不该被选中，也没有告诉它哪一步不能写错。
 
 [上一篇](/blog/how-to-write-agent-skills/)写的是 skill 和业务文档、工具定义怎么分工，以及怎样验收「选中了」和「做完了」。这篇只写怎么把一份 skill 写短、写准。框架来自 [hello-agents 的 extra08](https://github.com/datawhalechina/hello-agents/blob/main/extra-chapter/extra08-%e5%a6%82%e4%bd%95%e5%86%99%e5%87%ba%e5%a5%bd%e7%9a%84skill.md)，下面是我按这个框架实际取舍时用的规则。
 
