@@ -1,0 +1,56 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="模型对话接口是结构化上下文。Chat 每次自己带历史，Responses 可以用请求 ID 关联，也可以关掉服务端存储、在本地管理。Agent 围绕目标多轮调用模型，任务是否结束由 runtime 决定。"><meta name="theme-color" content="#fdfdfc"><title>模型对话接口与 Agent 本质 | liam</title><link rel="icon" href="/favicon.svg?v=3" type="image/svg+xml"><link rel="canonical" href="https://lianminx.github.io/blog/model-chat-and-agent/"><link rel="alternate" type="application/rss+xml" title="liam" href="/rss.xml"><link rel="sitemap" href="/sitemap.xml"><meta property="og:type" content="website"><meta property="og:title" content="模型对话接口与 Agent 本质 | liam"><meta property="og:description" content="模型对话接口是结构化上下文。Chat 每次自己带历史，Responses 可以用请求 ID 关联，也可以关掉服务端存储、在本地管理。Agent 围绕目标多轮调用模型，任务是否结束由 runtime 决定。"><meta property="og:url" content="https://lianminx.github.io/blog/model-chat-and-agent/"><link rel="stylesheet" href="/_astro/Layout.O7edXYKY.css"></head><body><a class="skip-link" href="#content">跳到正文</a><div class="page"><header class="article-header"><a class="back" href="/" aria-label="返回首页">←</a></header><main id="content"><article><h1 class="article-title">模型对话接口与 Agent 本质</h1><p class="article-meta"><time datetime="2026-11-21T00:00:00.000Z">Nov 21, 2026</time> · 2 分钟阅读</p><div class="prose"><p>我一开始以为，模型厂商的 <code>/chat</code> 只返回回答，<code>/Responses</code> 会附带思考过程。要说清楚的不是这个差别。</p>
+<p>模型对话接口本质上是通过结构化上下文与模型交互。传统 Chat 接口以 Message 为基本单位，用 Role 区分消息来源：</p>
+<ol>
+<li>System / Developer：定义模型的行为规范、提示词和约束。工具和 Skill 的描述也在这里。</li>
+<li>User：用户输入和任务要求。</li>
+<li>Assistant：模型的回答，以及工具调用请求。</li>
+<li>Tool：工具执行结果，作为后续推理的输入。</li>
+</ol>
+<p>Chat Completions 以消息列表为核心。Responses 用更丰富的 Item，可以表达文本、工具调用、工具结果、推理数据和多模态内容。两边都能做多轮对话和工具调用。Responses 的优势是协议更统一，能表达的内容也更多。</p>
+<p>上下文放在哪，两边不一样。</p>
+<p>Chat 的输入输出就是上面这种 Message。每次请求都带上前面几轮，上下文在本地管理。</p>
+<p>Responses 可以把整个会话用请求 ID 连起来。之后每次只带必要字段，服务端按 ID 关联前面几轮。它也支持和 Chat 一样，不把上下文放在服务端，由本地自己管理。我现在用的就是 Responses，并且关掉了服务端存储。</p>
+<p>Agent 就是围绕一个目标，持续组织上下文，多轮调用模型，根据模型输出决定下一步，直到任务完成。</p>
+<p>任务是否结束，不由单次接口状态决定。两类接口都有响应状态，说明的是这一次调用。</p>
+<p>Chat 返回 <code>finish_reason</code>，其中：</p>
+<ul>
+<li><code>tool_calls</code>：模型还要调用工具</li>
+<li><code>stop</code>：这次生成结束</li>
+</ul>
+<p>Responses 返回 <code>status</code>：</p>
+<table>
+<thead>
+<tr>
+<th>status</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>completed</td>
+<td>本次 Response 生成完成</td>
+</tr>
+<tr>
+<td>in_progress</td>
+<td>正在生成</td>
+</tr>
+<tr>
+<td>incomplete</td>
+<td>响应未完整完成</td>
+</tr>
+<tr>
+<td>failed</td>
+<td>执行失败</td>
+</tr>
+<tr>
+<td>cancelled</td>
+<td>已取消</td>
+</tr>
+<tr>
+<td>queued</td>
+<td>等待处理</td>
+</tr>
+</tbody>
+</table>
+<p>实际决定任务是否结束的是 agent runtime。正常结束，就是没有后续工具调用。异常结束有很多情况，要分开看，不能把一次接口状态当成任务结果。</p>
+</div></article></main><footer>© 2026 liam</footer></div></body></html>
